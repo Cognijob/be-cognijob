@@ -125,4 +125,31 @@ export const passwordResetTokens = pgTable(
   })
 );
 
+export const jobListings = pgTable(
+  "job_listings",
+  {
+    jobId: uuid("job_id").defaultRandom().primaryKey(),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.companyId, { onDelete: "cascade" }),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.userId, { onDelete: "restrict" }),
+    title: varchar("title", { length: 200 }).notNull(),
+    description: text("description").notNull(),
+    requirements: text("requirements").notNull(),
+    employmentType: varchar("employment_type", { length: 100 }).notNull(),
+    location: varchar("location", { length: 150 }).notNull(),
+    salaryRange: varchar("salary_range", { length: 100 }),
+    status: jobStatusEnum("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    companyIdx: index("idx_job_listings_company_id").on(table.companyId),
+    statusIdx: index("idx_job_listings_status").on(table.status)
+  })
+);
+
 export type UserRole = (typeof userRoleEnum.enumValues)[number];

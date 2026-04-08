@@ -1,6 +1,6 @@
 import { and, count, eq } from "drizzle-orm";
 import { db, schema } from "../db/index.js";
-import { HttpError } from "./http-error.js";
+import { HttpError } from "../lib/http-error.js";
 
 export const ensureCompanyExists = async (companyId: string) => {
   const [company] = await db

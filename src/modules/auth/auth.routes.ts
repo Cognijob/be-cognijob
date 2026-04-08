@@ -24,6 +24,46 @@ export const authRouter = Router();
  *   post:
  *     tags: [Auth]
  *     summary: Register a new job seeker
+ *     description: Create a new job seeker account using email and password.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - email
+ *               - password
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: Nadia Jasmine
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: nadia@example.com
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 example: Password123
+ *               gender:
+ *                 type: string
+ *                 example: female
+ *               age:
+ *                 type: integer
+ *                 example: 22
+ *               photoUrl:
+ *                 type: string
+ *                 format: uri
+ *                 example: https://example.com/photo.jpg
+ *     responses:
+ *       201:
+ *         description: Job seeker registered successfully
+ *       400:
+ *         description: Validation failed
+ *       409:
+ *         description: Email is already registered
  */
 authRouter.post(
   "/register/job-seeker",
@@ -77,6 +117,40 @@ authRouter.post(
  *   post:
  *     tags: [Auth]
  *     summary: Register a new recruiter
+ *     description: Register recruiter with existing company or create a new company.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           examples:
+ *             existingCompany:
+ *               value:
+ *                 name: Recruiter A
+ *                 email: recruiter@example.com
+ *                 password: Password123
+ *                 companyMode: existing
+ *                 existingCompanyId: 11111111-1111-1111-1111-111111111111
+ *             newCompany:
+ *               value:
+ *                 name: Recruiter B
+ *                 email: recruiter2@example.com
+ *                 password: Password123
+ *                 companyMode: new
+ *                 newCompany:
+ *                   companyName: Cognijob Labs
+ *                   industry: Technology
+ *                   location: Jakarta
+ *                   workplaceTag: Inclusive
+ *                   description: Transparent hiring platform
+ *     responses:
+ *       201:
+ *         description: Recruiter registered successfully
+ *       400:
+ *         description: Validation failed or recruiter limit reached
+ *       404:
+ *         description: Selected company was not found
+ *       409:
+ *         description: Email or company already registered
  */
 authRouter.post(
   "/register/recruiter",
@@ -184,6 +258,29 @@ authRouter.post(
  *   post:
  *     tags: [Auth]
  *     summary: Login with email and password
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: nadia@example.com
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 example: Password123
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *       401:
+ *         description: Invalid email or password
  */
 authRouter.post("/login", validate({ body: loginSchema }), async (req, res, next) => {
   try {
@@ -232,6 +329,22 @@ authRouter.post("/login", validate({ body: loginSchema }), async (req, res, next
  *   post:
  *     tags: [Auth]
  *     summary: Generate password reset token
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: nadia@example.com
+ *     responses:
+ *       200:
+ *         description: Password reset token generated
  */
 authRouter.post(
   "/forgot-password",
@@ -279,6 +392,28 @@ authRouter.post(
  *   post:
  *     tags: [Auth]
  *     summary: Reset password using reset token
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *               - newPassword
+ *             properties:
+ *               token:
+ *                 type: string
+ *                 example: raw-reset-token
+ *               newPassword:
+ *                 type: string
+ *                 format: password
+ *                 example: NewPassword123
+ *     responses:
+ *       200:
+ *         description: Password has been reset successfully
+ *       400:
+ *         description: Reset token is invalid or expired
  */
 authRouter.post(
   "/reset-password",
@@ -329,6 +464,13 @@ authRouter.post(
  *   get:
  *     tags: [Auth]
  *     summary: Get current authenticated user
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Current user fetched successfully
+ *       401:
+ *         description: Authentication required
  */
 authRouter.get("/me", authenticate, async (req, res, next) => {
   try {

@@ -16,7 +16,17 @@ export const companyRouter = Router();
  * /companies:
  *   get:
  *     tags: [Companies]
- *     summary: List companies for public browsing or recruiter registration
+ *     summary: List companies for recruiter registration or public browsing
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Search company by company name
+ *     responses:
+ *       200:
+ *         description: Companies fetched successfully
  */
 companyRouter.get("/companies", validate({ query: companyQuerySchema }), async (req, res, next) => {
   try {
@@ -53,6 +63,17 @@ companyRouter.get("/companies", validate({ query: companyQuerySchema }), async (
  *   get:
  *     tags: [Companies]
  *     summary: Get current recruiter company profile
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Company profile fetched successfully
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Recruiter is not assigned to any company
+ *       404:
+ *         description: Company profile not found
  */
 companyRouter.get(
   "/company/profile",
@@ -84,6 +105,37 @@ companyRouter.get(
  *   put:
  *     tags: [Companies]
  *     summary: Update current recruiter company profile
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               companyName:
+ *                 type: string
+ *                 example: Cognijob Labs
+ *               industry:
+ *                 type: string
+ *                 example: Technology
+ *               location:
+ *                 type: string
+ *                 example: Jakarta
+ *               workplaceTag:
+ *                 type: string
+ *                 example: Inclusive
+ *               description:
+ *                 type: string
+ *                 example: Transparent workplace hiring platform
+ *     responses:
+ *       200:
+ *         description: Company profile updated successfully
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Recruiter is not assigned to any company
  */
 companyRouter.put(
   "/company/profile",

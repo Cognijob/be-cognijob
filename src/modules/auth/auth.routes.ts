@@ -490,6 +490,6 @@ authRouter.get("/me", authenticate, async (req, res, next) => {
 
     return res.json(successResponse("Current user fetched successfully", user));
   } catch (error) {
-    return next(error);
+    return next(error); 
   }
 });

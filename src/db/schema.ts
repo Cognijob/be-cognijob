@@ -14,7 +14,7 @@ import {
 import { sql } from "drizzle-orm";
 
 export const userRoleEnum = pgEnum("user_role", ["job_seeker", "recruiter"]);
-export const jobStatusEnum = pgEnum("job_status", ["active", "closed"]);
+export const jobStatusEnum = pgEnum("job_status", ["draft", "published", "closed"]);
 export const recruiterApplicationStatusEnum = pgEnum("recruiter_application_status", [
   "submitted",
   "reviewed",
@@ -135,13 +135,14 @@ export const jobListings = pgTable(
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.userId, { onDelete: "restrict" }),
-    title: varchar("title", { length: 200 }).notNull(),
-    description: text("description").notNull(),
-    requirements: text("requirements").notNull(),
-    employmentType: varchar("employment_type", { length: 100 }).notNull(),
-    location: varchar("location", { length: 150 }).notNull(),
+    title: varchar("title", { length: 200 }),
+    description: text("description"),
+    requirements: text("requirements"),
+    employmentType: varchar("employment_type", { length: 100 }),
+    location: varchar("location", { length: 150 }),
+    category: varchar("category", { length: 100 }),
     salaryRange: varchar("salary_range", { length: 100 }),
-    status: jobStatusEnum("status").notNull().default("active"),
+    status: jobStatusEnum("status").notNull().default("draft"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()

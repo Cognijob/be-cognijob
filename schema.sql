@@ -7,7 +7,7 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'job_status') THEN
-        CREATE TYPE job_status AS ENUM ('active', 'closed');
+        CREATE TYPE job_status AS ENUM ('draft', 'published', 'closed');
     END IF;
 
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'recruiter_application_status') THEN
@@ -82,13 +82,14 @@ CREATE TABLE IF NOT EXISTS job_listings (
     job_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     company_id UUID NOT NULL REFERENCES companies(company_id) ON DELETE CASCADE,
     created_by UUID NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
-    title VARCHAR(200) NOT NULL,
-    description TEXT NOT NULL,
-    requirements TEXT NOT NULL,
-    employment_type VARCHAR(100) NOT NULL,
-    location VARCHAR(150) NOT NULL,
+    title VARCHAR(200),
+    description TEXT,
+    requirements TEXT,
+    employment_type VARCHAR(100),
+    location VARCHAR(150),
+    category VARCHAR(100),
     salary_range VARCHAR(100),
-    status job_status NOT NULL DEFAULT 'active',
+    status job_status NOT NULL DEFAULT 'draft',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

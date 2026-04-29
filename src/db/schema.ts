@@ -29,6 +29,7 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "deadline_reminder"
 ]);
 
+// ─── USERS ────────────────────────────────────────────────────────────────────
 export const users = pgTable(
   "users",
   {
@@ -49,6 +50,7 @@ export const users = pgTable(
   })
 );
 
+// ─── COMPANIES ────────────────────────────────────────────────────────────────
 export const companies = pgTable("companies", {
   companyId: uuid("company_id").defaultRandom().primaryKey(),
   createdBy: uuid("created_by")
@@ -63,6 +65,7 @@ export const companies = pgTable("companies", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 });
 
+// ─── COMPANY RECRUITERS ───────────────────────────────────────────────────────
 export const companyRecruiters = pgTable(
   "company_recruiters",
   {
@@ -82,6 +85,7 @@ export const companyRecruiters = pgTable(
   })
 );
 
+// ─── JOB SEEKER PROFILES ──────────────────────────────────────────────────────
 export const jobSeekerProfiles = pgTable(
   "job_seeker_profiles",
   {
@@ -108,6 +112,152 @@ export const jobSeekerProfiles = pgTable(
   })
 );
 
+// ─── JOB APPLICATIONS ────────────────────────────────────────────────────────
+export const jobApplications = pgTable(
+  "job_applications",
+  {
+    applicationId: uuid("application_id").defaultRandom().primaryKey(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => jobListings.jobId, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.userId, { onDelete: "cascade" }),
+    isAnonymous: boolean("is_anonymous").notNull().default(true),
+    cvUrl: text("cv_url").notNull(),
+    recruiterStatus: recruiterApplicationStatusEnum("recruiter_status")
+      .notNull()
+      .default("submitted"),
+    appliedAt: timestamp("applied_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    uniqueApplication: unique("uq_user_job_application").on(table.jobId, table.userId),
+    jobIdx: index("idx_job_applications_job_id").on(table.jobId),
+    userIdx: index("idx_job_applications_user_id").on(table.userId),
+    statusIdx: index("idx_job_applications_recruiter_status").on(table.recruiterStatus)
+  })
+);
+
+// ─── BOOKMARKS ────────────────────────────────────────────────────────────────
+export const bookmarks = pgTable(
+  "bookmarks",
+  {
+    bookmarkId: uuid("bookmark_id").defaultRandom().primaryKey(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => jobListings.jobId, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.userId, { onDelete: "cascade" }),
+    bookmarkedAt: timestamp("bookmarked_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    uniqueBookmark: unique("uq_user_job_bookmark").on(table.jobId, table.userId),
+    userIdx: index("idx_bookmarks_user_id").on(table.userId)
+  })
+);
+
+// ─── WORKPLACE RATINGS ────────────────────────────────────────────────────────
+export const workplaceRatings = pgTable(
+  "workplace_ratings",
+  {
+    ratingId: uuid("rating_id").defaultRandom().primaryKey(),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.companyId, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.userId, { onDelete: "cascade" }),
+    ratingScore: integer("rating_score").notNull(),
+    review: text("review"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    scoreCheck: check(
+      "workplace_ratings_score_check",
+      sql`${table.ratingScore} BETWEEN 1 AND 5`
+    ),
+    companyIdx: index("idx_workplace_ratings_company_id").on(table.companyId)
+  })
+);
+
+// ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
+export const notifications = pgTable(
+  "notifications",
+  {
+    notificationId: uuid("notification_id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.userId, { onDelete: "cascade" }),
+    type: notificationTypeEnum("type").notNull(),
+    title: varchar("title", { length: 200 }).notNull(),
+    body: text("body").notNull(),
+    isRead: boolean("is_read").notNull().default(false),
+    referenceId: uuid("reference_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    userIdx: index("idx_notifications_user_id").on(table.userId),
+    isReadIdx: index("idx_notifications_is_read").on(table.isRead)
+  })
+);
+
+// ─── CONVERSATIONS ────────────────────────────────────────────────────────────
+export const conversations = pgTable(
+  "conversations",
+  {
+    conversationId: uuid("conversation_id").defaultRandom().primaryKey(),
+    applicationId: uuid("application_id")
+      .notNull()
+      .unique()
+      .references(() => jobApplications.applicationId, { onDelete: "cascade" }),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => jobListings.jobId, { onDelete: "cascade" }),
+    jobSeekerId: uuid("job_seeker_id")
+      .notNull()
+      .references(() => users.userId, { onDelete: "cascade" }),
+    recruiterId: uuid("recruiter_id")
+      .notNull()
+      .references(() => users.userId, { onDelete: "cascade" }),
+    lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
+    lastMessagePreview: varchar("last_message_preview", { length: 200 }),
+    unreadBySeeker: integer("unread_by_seeker").notNull().default(0),
+    unreadByRecruiter: integer("unread_by_recruiter").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    seekerIdx: index("idx_conversations_job_seeker_id").on(table.jobSeekerId),
+    recruiterIdx: index("idx_conversations_recruiter_id").on(table.recruiterId),
+    lastMsgIdx: index("idx_conversations_last_message_at").on(table.lastMessageAt)
+  })
+);
+
+// ─── MESSAGES ─────────────────────────────────────────────────────────────────
+export const messages = pgTable(
+  "messages",
+  {
+    messageId: uuid("message_id").defaultRandom().primaryKey(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversations.conversationId, { onDelete: "cascade" }),
+    senderId: uuid("sender_id")
+      .notNull()
+      .references(() => users.userId, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    isRead: boolean("is_read").notNull().default(false),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    convIdx: index("idx_messages_conversation_id").on(table.conversationId),
+    senderIdx: index("idx_messages_sender_id").on(table.senderId),
+    createdIdx: index("idx_messages_created_at").on(table.createdAt)
+  })
+);
+
+// ─── PASSWORD RESET TOKENS ────────────────────────────────────────────────────
 export const passwordResetTokens = pgTable(
   "password_reset_tokens",
   {
@@ -125,6 +275,7 @@ export const passwordResetTokens = pgTable(
   })
 );
 
+// ─── JOB LISTINGS ────────────────────────────────────────────────────────────
 export const jobListings = pgTable(
   "job_listings",
   {
@@ -153,4 +304,9 @@ export const jobListings = pgTable(
   })
 );
 
+// ─── TYPES ────────────────────────────────────────────────────────────────────
 export type UserRole = (typeof userRoleEnum.enumValues)[number];
+export type JobStatus = (typeof jobStatusEnum.enumValues)[number];
+export type RecruiterApplicationStatus =
+  (typeof recruiterApplicationStatusEnum.enumValues)[number];
+export type NotificationType = (typeof notificationTypeEnum.enumValues)[number];

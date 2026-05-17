@@ -75,6 +75,11 @@ CREATE TABLE IF NOT EXISTS job_seeker_profiles (
     organization_experience TEXT,
     interests TEXT,
     cv_url TEXT,
+    cv_file_name TEXT,
+    cv_file_size INT,
+    cv_mime_type VARCHAR(150),
+    cv_storage_path TEXT,
+    cv_uploaded_at TIMESTAMPTZ,
     profile_completeness INT NOT NULL DEFAULT 0 CHECK (profile_completeness BETWEEN 0 AND 100),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

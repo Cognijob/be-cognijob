@@ -101,6 +101,11 @@ export const jobSeekerProfiles = pgTable(
     organizationExperience: text("organization_experience"),
     interests: text("interests"),
     cvUrl: text("cv_url"),
+    cvFileName: text("cv_file_name"),
+    cvFileSize: integer("cv_file_size"),
+    cvMimeType: varchar("cv_mime_type", { length: 150 }),
+    cvStoragePath: text("cv_storage_path"),
+    cvUploadedAt: timestamp("cv_uploaded_at", { withTimezone: true }),
     profileCompleteness: integer("profile_completeness").notNull().default(0),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },
@@ -136,25 +141,6 @@ export const jobApplications = pgTable(
     jobIdx: index("idx_job_applications_job_id").on(table.jobId),
     userIdx: index("idx_job_applications_user_id").on(table.userId),
     statusIdx: index("idx_job_applications_recruiter_status").on(table.recruiterStatus)
-  })
-);
-
-// ─── BOOKMARKS ────────────────────────────────────────────────────────────────
-export const bookmarks = pgTable(
-  "bookmarks",
-  {
-    bookmarkId: uuid("bookmark_id").defaultRandom().primaryKey(),
-    jobId: uuid("job_id")
-      .notNull()
-      .references(() => jobListings.jobId, { onDelete: "cascade" }),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.userId, { onDelete: "cascade" }),
-    bookmarkedAt: timestamp("bookmarked_at", { withTimezone: true }).notNull().defaultNow()
-  },
-  (table) => ({
-    uniqueBookmark: unique("uq_user_job_bookmark").on(table.jobId, table.userId),
-    userIdx: index("idx_bookmarks_user_id").on(table.userId)
   })
 );
 
@@ -301,6 +287,25 @@ export const jobListings = pgTable(
   (table) => ({
     companyIdx: index("idx_job_listings_company_id").on(table.companyId),
     statusIdx: index("idx_job_listings_status").on(table.status)
+  })
+);
+
+// ─── BOOKMARKS ────────────────────────────────────────────────────────────────
+export const bookmarks = pgTable(
+  "bookmarks",
+  {
+    bookmarkId: uuid("bookmark_id").defaultRandom().primaryKey(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => jobListings.jobId, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.userId, { onDelete: "cascade" }),
+    bookmarkedAt: timestamp("bookmarked_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    uniqueUserJobBookmark: unique("uq_user_job_bookmark").on(table.jobId, table.userId),
+    userIdx: index("idx_bookmarks_user_id").on(table.userId)
   })
 );
 

@@ -1,0 +1,528 @@
+{
+  "info": {
+    "_postman_id": "3a4f1382-81c9-4e8b-9bd6-cognijob-local",
+    "name": "Cognijob API - Local",
+    "description": "Simple nested collection for testing Cognijob backend locally. Recommended flow: Setup -> Auth -> Company -> Jobs -> Job Seeker -> Recruiter Review.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "seekerToken", "value": "" },
+    { "key": "recruiterToken", "value": "" },
+    { "key": "companyId", "value": "" },
+    { "key": "jobId", "value": "" },
+    { "key": "applicationId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "00 Setup",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health"
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 Auth",
+      "item": [
+        {
+          "name": "Job Seeker",
+          "item": [
+            {
+              "name": "Register Job Seeker",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json?.data?.token) pm.collectionVariables.set('seekerToken', json.data.token);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Naura Job Seeker\",\n  \"email\": \"naura.seeker@example.com\",\n  \"password\": \"Password123\",\n  \"gender\": \"female\",\n  \"age\": 19\n}"
+                },
+                "url": "{{baseUrl}}/auth/register/job-seeker"
+              }
+            },
+            {
+              "name": "Login Job Seeker",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json?.data?.token) pm.collectionVariables.set('seekerToken', json.data.token);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"naura.seeker@example.com\",\n  \"password\": \"Password123\"\n}"
+                },
+                "url": "{{baseUrl}}/auth/login"
+              }
+            },
+            {
+              "name": "Get Me - Job Seeker",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [{ "key": "token", "value": "{{seekerToken}}", "type": "string" }]
+                },
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/auth/me"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Recruiter",
+          "item": [
+            {
+              "name": "Register Recruiter",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json?.data?.token) pm.collectionVariables.set('recruiterToken', json.data.token);",
+                      "if (json?.data?.companyId) pm.collectionVariables.set('companyId', json.data.companyId);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Naura Recruiter\",\n  \"email\": \"naura.recruiter@example.com\",\n  \"password\": \"Password123\",\n  \"companyMode\": \"new\",\n  \"newCompany\": {\n    \"companyName\": \"Cognijob Test Company\",\n    \"industry\": \"Technology\",\n    \"location\": \"Jakarta\",\n    \"workplaceTag\": \"Inclusive\",\n    \"description\": \"Company for API testing\"\n  }\n}"
+                },
+                "url": "{{baseUrl}}/auth/register/recruiter"
+              }
+            },
+            {
+              "name": "Login Recruiter",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json?.data?.token) pm.collectionVariables.set('recruiterToken', json.data.token);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"naura.recruiter@example.com\",\n  \"password\": \"Password123\"\n}"
+                },
+                "url": "{{baseUrl}}/auth/login"
+              }
+            },
+            {
+              "name": "Get Me - Recruiter",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [{ "key": "token", "value": "{{recruiterToken}}", "type": "string" }]
+                },
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/auth/me"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 Company",
+      "item": [
+        {
+          "name": "List Companies",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/companies"
+          }
+        },
+        {
+          "name": "Get My Company",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{recruiterToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/company/profile"
+          }
+        },
+        {
+          "name": "Update My Company",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{recruiterToken}}", "type": "string" }]
+            },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyName\": \"Cognijob Test Company Updated\",\n  \"industry\": \"Technology\",\n  \"location\": \"Bandung\",\n  \"workplaceTag\": \"Remote Friendly\",\n  \"description\": \"Updated company profile\"\n}"
+            },
+            "url": "{{baseUrl}}/company/profile"
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 Jobs",
+      "item": [
+        {
+          "name": "Recruiter CRUD",
+          "item": [
+            {
+              "name": "Create Job",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json?.data?.jobId) pm.collectionVariables.set('jobId', json.data.jobId);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [{ "key": "token", "value": "{{recruiterToken}}", "type": "string" }]
+                },
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"Frontend Developer\",\n  \"description\": \"Build web features for Cognijob.\",\n  \"requirements\": \"React, TypeScript, REST API\",\n  \"employmentType\": \"Full-time\",\n  \"location\": \"Jakarta\",\n  \"category\": \"Engineering\",\n  \"salaryRange\": \"IDR 8.000.000 - 12.000.000\",\n  \"status\": \"published\"\n}"
+                },
+                "url": "{{baseUrl}}/jobs"
+              }
+            },
+            {
+              "name": "List My Jobs",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [{ "key": "token", "value": "{{recruiterToken}}", "type": "string" }]
+                },
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/jobs"
+              }
+            },
+            {
+              "name": "Get Job Detail",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [{ "key": "token", "value": "{{recruiterToken}}", "type": "string" }]
+                },
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/jobs/{{jobId}}"
+              }
+            },
+            {
+              "name": "Update Job",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [{ "key": "token", "value": "{{recruiterToken}}", "type": "string" }]
+                },
+                "method": "PUT",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"Senior Frontend Developer\",\n  \"status\": \"published\"\n}"
+                },
+                "url": "{{baseUrl}}/jobs/{{jobId}}"
+              }
+            },
+            {
+              "name": "Delete Job - Run Last",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [{ "key": "token", "value": "{{recruiterToken}}", "type": "string" }]
+                },
+                "method": "DELETE",
+                "header": [],
+                "url": "{{baseUrl}}/jobs/{{jobId}}"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Public Browse",
+          "item": [
+            {
+              "name": "Browse Published Jobs",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/"
+              }
+            },
+            {
+              "name": "Get Public Job Detail",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/{{jobId}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 Job Seeker",
+      "item": [
+        {
+          "name": "Profile",
+          "item": [
+            {
+              "name": "Get Profile",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [{ "key": "token", "value": "{{seekerToken}}", "type": "string" }]
+                },
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/users/profile"
+              }
+            },
+            {
+              "name": "Update Profile",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [{ "key": "token", "value": "{{seekerToken}}", "type": "string" }]
+                },
+                "method": "PUT",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Naura Job Seeker Updated\",\n  \"skills\": \"React, TypeScript, UI Testing\",\n  \"portfolioLink\": \"https://example.com/portfolio\",\n  \"workExperience\": \"Intern frontend developer\",\n  \"interests\": \"Frontend and accessibility\"\n}"
+                },
+                "url": "{{baseUrl}}/users/profile"
+              }
+            },
+            {
+              "name": "Get Profile Preview",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [{ "key": "token", "value": "{{seekerToken}}", "type": "string" }]
+                },
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/users/profile/preview"
+              }
+            },
+            {
+              "name": "Upload CV",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [{ "key": "token", "value": "{{seekerToken}}", "type": "string" }]
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [{ "key": "cv", "type": "file", "src": [] }]
+                },
+                "url": "{{baseUrl}}/users/cv"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Applications",
+          "item": [
+            {
+              "name": "Apply to Job",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json?.data?.applicationId) pm.collectionVariables.set('applicationId', json.data.applicationId);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [{ "key": "token", "value": "{{seekerToken}}", "type": "string" }]
+                },
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"jobId\": \"{{jobId}}\",\n  \"isAnonymous\": true,\n  \"cvUrl\": \"https://example.com/cv.pdf\"\n}"
+                },
+                "url": "{{baseUrl}}/applications"
+              }
+            },
+            {
+              "name": "List My Applications",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [{ "key": "token", "value": "{{seekerToken}}", "type": "string" }]
+                },
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/applications"
+              }
+            },
+            {
+              "name": "Check Application Status",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [{ "key": "token", "value": "{{seekerToken}}", "type": "string" }]
+                },
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/applications/{{applicationId}}/status"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bookmarks",
+          "item": [
+            {
+              "name": "Create Bookmark",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [{ "key": "token", "value": "{{seekerToken}}", "type": "string" }]
+                },
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/bookmarks/{{jobId}}"
+              }
+            },
+            {
+              "name": "List Bookmarks",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [{ "key": "token", "value": "{{seekerToken}}", "type": "string" }]
+                },
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/bookmarks"
+              }
+            },
+            {
+              "name": "Delete Bookmark",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [{ "key": "token", "value": "{{seekerToken}}", "type": "string" }]
+                },
+                "method": "DELETE",
+                "header": [],
+                "url": "{{baseUrl}}/bookmarks/{{jobId}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 Recruiter Review",
+      "item": [
+        {
+          "name": "List Job Applicants",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{recruiterToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/jobs/{{jobId}}/applicants"
+          }
+        },
+        {
+          "name": "Get Application Detail",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{recruiterToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/applications/{{applicationId}}"
+          }
+        },
+        {
+          "name": "Update Application Status",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{recruiterToken}}", "type": "string" }]
+            },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"reviewed\"\n}"
+            },
+            "url": "{{baseUrl}}/applications/{{applicationId}}/status"
+          }
+        }
+      ]
+    }
+  ]
+}

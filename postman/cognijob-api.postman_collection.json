@@ -11,7 +11,9 @@
     { "key": "recruiterToken", "value": "" },
     { "key": "companyId", "value": "" },
     { "key": "jobId", "value": "" },
-    { "key": "applicationId", "value": "" }
+    { "key": "applicationId", "value": "" },
+    { "key": "conversationId", "value": "" },
+    { "key": "messageId", "value": "" }
   ],
   "item": [
     {
@@ -300,7 +302,7 @@
               "request": {
                 "method": "GET",
                 "header": [],
-                "url": "{{baseUrl}}/"
+                "url": "{{baseUrl}}/public/jobs?page=1&limit=10"
               }
             },
             {
@@ -308,7 +310,7 @@
               "request": {
                 "method": "GET",
                 "header": [],
-                "url": "{{baseUrl}}/{{jobId}}"
+                "url": "{{baseUrl}}/public/jobs/{{jobId}}"
               }
             }
           ]
@@ -520,6 +522,108 @@
               "raw": "{\n  \"status\": \"reviewed\"\n}"
             },
             "url": "{{baseUrl}}/applications/{{applicationId}}/status"
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 Ratings",
+      "item": [
+        {
+          "name": "Submit Company Rating",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{seekerToken}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyId\": \"{{companyId}}\",\n  \"ratingScore\": 4,\n  \"review\": \"Great culture and transparent hiring process.\"\n}"
+            },
+            "url": "{{baseUrl}}/ratings"
+          }
+        },
+        {
+          "name": "Get Company Ratings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/companies/{{companyId}}/ratings?page=1&limit=10"
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 Conversations & Messages",
+      "item": [
+        {
+          "name": "Create or Get Conversation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json?.data?.conversationId) pm.collectionVariables.set('conversationId', json.data.conversationId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{seekerToken}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"applicationId\": \"{{applicationId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/conversations"
+          }
+        },
+        {
+          "name": "Send Message",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json?.data?.messageId) pm.collectionVariables.set('messageId', json.data.messageId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{seekerToken}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Halo, saya mau tanya soal proses interview.\"\n}"
+            },
+            "url": "{{baseUrl}}/conversations/{{conversationId}}/messages"
+          }
+        },
+        {
+          "name": "Get Conversation Messages",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{seekerToken}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/conversations/{{conversationId}}/messages?limit=50"
           }
         }
       ]

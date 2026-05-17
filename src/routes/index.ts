@@ -7,6 +7,9 @@ import { jobRouter } from "./jobs.routes.js";
 import { applicationRouter, jobApplicantsRouter } from "./applications.routes.js";
 import { userRouter } from "./users.routes.js";
 import { publicJobRouter } from "./public-jobs.routes.js";
+import { ratingRouter } from "./rating.routes.js";
+import { notificationRouter } from "./notifications.routes.js";
+import { messageRouter } from "./messages.routes.js";
 
 export const apiRouter = Router();
 
@@ -17,4 +20,7 @@ apiRouter.use("/jobs", jobApplicantsRouter);
 apiRouter.use("/applications", applicationRouter);
 apiRouter.use("/users", userRouter);
 apiRouter.use("/bookmarks", bookmarkRouter);
-apiRouter.use("/", publicJobRouter);
+apiRouter.use("/public/jobs", publicJobRouter);
+apiRouter.use("/", ratingRouter);
+apiRouter.use("/notifications", notificationRouter);
+apiRouter.use("/", messageRouter);

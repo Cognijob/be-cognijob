@@ -9,6 +9,14 @@ export const APPLICANT_STATUS_MAP: Record<RecruiterApplicationStatus, string> = 
   rejected: "rejected"
 };
 
+export const APPLICANT_STATUS_MESSAGE_MAP: Record<RecruiterApplicationStatus, string> = {
+  submitted: "Lamaran kamu telah kami terima dan sedang menunggu review recruiter.",
+  reviewed: "Lamaran kamu sedang di-review oleh tim kami. Tunggu update selanjutnya ya!",
+  next_stage: "Selamat! Lamaran kamu lanjut ke tahap berikutnya. Silakan cek pesan untuk detail.",
+  accepted: "Selamat! Kamu diterima! Offer sudah dikirim. Cek detail offer di Messages.",
+  rejected: "Maaf, saat ini kami memutuskan untuk lanjut dengan kandidat lain. Tetap semangat!"
+};
+
 // Valid next statuses per current status
 const VALID_TRANSITIONS: Record<RecruiterApplicationStatus, RecruiterApplicationStatus[]> = {
   submitted: ["reviewed", "rejected"],

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db, schema } from "../../db/index.js";
 import {
   APPLICANT_STATUS_MAP,
+  APPLICANT_STATUS_MESSAGE_MAP,
   assertValidStatusTransition
 } from "../../lib/applicant-status.js";
 import { successResponse } from "../../lib/api-response.js";
@@ -301,7 +302,8 @@ applicationRouter.get(
           appliedAt: schema.jobApplications.appliedAt,
           updatedAt: schema.jobApplications.updatedAt,
           jobTitle: schema.jobListings.title,
-          companyName: schema.companies.companyName
+          companyName: schema.companies.companyName,
+          expiresAt: schema.jobListings.expiresAt
         })
         .from(schema.jobApplications)
         .innerJoin(
@@ -324,7 +326,8 @@ applicationRouter.get(
       return res.json(
         successResponse("Application status fetched", {
           ...application,
-          applicantStatus: APPLICANT_STATUS_MAP[application.recruiterStatus]
+          applicantStatus: APPLICANT_STATUS_MAP[application.recruiterStatus],
+          contextMessage: APPLICANT_STATUS_MESSAGE_MAP[application.recruiterStatus]
         })
       );
     } catch (error) {

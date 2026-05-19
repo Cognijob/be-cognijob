@@ -62,7 +62,7 @@ const companyParamsSchema = z.object({ id: z.uuid() });
  *         description: You have already rated this company
  */
 ratingRouter.post(
-  "/ratings",
+  "/",
   authenticate,
   authorize("job_seeker"),
   validate({ body: createRatingSchema }),

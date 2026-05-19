@@ -6,6 +6,7 @@ import { successResponse } from "../../lib/api-response.js";
 import { HttpError } from "../../lib/http-error.js";
 import { signAccessToken } from "../../lib/jwt.js";
 import { comparePassword, hashPassword } from "../../lib/password.js";
+import { sendPasswordResetEmail } from "../../lib/email.service.js";
 import { authenticate } from "../../middlewares/authenticate.js";
 import { validate } from "../../middlewares/validate.js";
 import {
@@ -78,25 +79,33 @@ authRouter.post(
         .where(eq(schema.users.email, payload.email));
 
       if (existingUser) {
-        throw new HttpError(409, "Email is already registered");
+        throw new HttpError(409, "Email sudah terdaftar");
       }
 
       const [user] = await db
         .insert(schema.users)
         .values({
-          name: payload.name,
+          name: `${payload.firstName} ${payload.lastName}`,
+          firstName: payload.firstName,
+          lastName: payload.lastName,
           email: payload.email,
           passwordHash: await hashPassword(payload.password),
           role: "job_seeker",
           gender: payload.gender,
           age: payload.age,
-          photoUrl: payload.photoUrl
+          photoUrl: payload.photoUrl,
+          location: payload.location,
+          whatsappNumber: payload.whatsappNumber
         })
         .returning({
           userId: schema.users.userId,
           name: schema.users.name,
+          firstName: schema.users.firstName,
+          lastName: schema.users.lastName,
           email: schema.users.email,
-          role: schema.users.role
+          role: schema.users.role,
+          location: schema.users.location,
+          whatsappNumber: schema.users.whatsappNumber
         });
 
       await db.insert(schema.jobSeekerProfiles).values({
@@ -165,14 +174,16 @@ authRouter.post(
         .where(eq(schema.users.email, payload.email));
 
       if (existingUser) {
-        throw new HttpError(409, "Email is already registered");
+        throw new HttpError(409, "Email sudah terdaftar");
       }
 
       const result = await db.transaction(async (tx) => {
         const [user] = await tx
           .insert(schema.users)
           .values({
-            name: payload.name,
+            name: `${payload.firstName} ${payload.lastName}`,
+            firstName: payload.firstName,
+            lastName: payload.lastName,
             email: payload.email,
             passwordHash: await hashPassword(payload.password),
             role: "recruiter"
@@ -180,6 +191,8 @@ authRouter.post(
           .returning({
             userId: schema.users.userId,
             name: schema.users.name,
+            firstName: schema.users.firstName,
+            lastName: schema.users.lastName,
             email: schema.users.email,
             role: schema.users.role
           });
@@ -193,7 +206,7 @@ authRouter.post(
             .where(eq(schema.companies.companyId, payload.existingCompanyId!));
 
           if (!company) {
-            throw new HttpError(404, "Selected company was not found");
+            throw new HttpError(404, "Perusahaan tidak ditemukan");
           }
 
           const [recruiterCountResult] = await tx
@@ -204,7 +217,7 @@ authRouter.post(
           const recruiterCount = Number(recruiterCountResult?.total ?? 0);
 
           if (recruiterCount >= 3) {
-            throw new HttpError(400, "Selected company already has the maximum number of recruiters");
+            throw new HttpError(400, "Perusahaan yang dipilih sudah memiliki jumlah perekrut maksimal");
           }
 
           companyId = company.companyId;
@@ -215,7 +228,7 @@ authRouter.post(
             .where(eq(schema.companies.companyName, payload.newCompany!.companyName));
 
           if (duplicateCompany) {
-            throw new HttpError(409, "Company name is already registered");
+            throw new HttpError(409, "Nama perusahaan sudah terdaftar");
           }
 
           const [company] = await tx
@@ -292,13 +305,13 @@ authRouter.post("/login", validate({ body: loginSchema }), async (req, res, next
       .where(eq(schema.users.email, payload.email));
 
     if (!user) {
-      throw new HttpError(401, "Invalid email or password");
+      throw new HttpError(401, "Email atau kata sandi salah");
     }
 
     const isPasswordValid = await comparePassword(payload.password, user.passwordHash);
 
     if (!isPasswordValid) {
-      throw new HttpError(401, "Invalid email or password");
+      throw new HttpError(401, "Email atau kata sandi salah");
     }
 
     const token = signAccessToken({
@@ -360,7 +373,7 @@ authRouter.post(
 
       if (!user) {
         return res.json(
-          successResponse("If the email exists, a password reset token has been generated")
+          successResponse("Jika email Anda terdaftar, instruksi pemulihan kata sandi telah dikirim ke email Anda.")
         );
       }
 
@@ -374,11 +387,12 @@ authRouter.post(
         expiresAt
       });
 
+      await sendPasswordResetEmail(email, rawToken);
+
+      const data = process.env.NODE_ENV !== "production" ? { resetToken: rawToken, expiresAt } : undefined;
+
       return res.json(
-        successResponse("Password reset token generated", {
-          resetToken: rawToken,
-          expiresAt
-        })
+        successResponse("Tautan atur ulang kata sandi telah dikirim ke email Anda", data)
       );
     } catch (error) {
       return next(error);
@@ -434,7 +448,7 @@ authRouter.post(
         );
 
       if (!resetToken || resetToken.expiresAt < new Date()) {
-        throw new HttpError(400, "Reset token is invalid or expired");
+        throw new HttpError(400, "Token reset tidak valid atau kedaluwarsa");
       }
 
       await db.transaction(async (tx) => {
@@ -451,7 +465,7 @@ authRouter.post(
           .where(eq(schema.passwordResetTokens.resetTokenId, resetToken.resetTokenId));
       });
 
-      return res.json(successResponse("Password has been reset successfully"));
+      return res.json(successResponse("Kata sandi telah berhasil diatur ulang"));
     } catch (error) {
       return next(error);
     }

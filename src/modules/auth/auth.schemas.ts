@@ -6,17 +6,21 @@ const passwordSchema = z
   .max(100, "Password is too long");
 
 export const jobSeekerRegistrationSchema = z.object({
-  name: z.string().min(1).max(150),
+  firstName: z.string().min(1).max(75),
+  lastName: z.string().min(1).max(75),
   email: z.email(),
   password: passwordSchema,
   gender: z.string().max(50).optional(),
   age: z.number().int().min(0).optional(),
-  photoUrl: z.url().optional()
+  photoUrl: z.url().optional(),
+  location: z.string().min(1).max(150),
+  whatsappNumber: z.string().regex(/^(\+62|62|0)[0-9]{9,15}$/, "WhatsApp number must be a valid Indonesian phone number")
 });
 
 export const recruiterRegistrationSchema = z
   .object({
-    name: z.string().min(1).max(150),
+    firstName: z.string().min(1).max(75),
+    lastName: z.string().min(1).max(75),
     email: z.email(),
     password: passwordSchema,
     companyMode: z.enum(["existing", "new"]),

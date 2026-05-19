@@ -31,60 +31,58 @@ const authHeader = {
   Authorization: `Bearer ${jobSeekerToken}`
 };
 
+// ─── DYNAMIC MOCK BUILDER FOR DRIZZLE CHAINING ──────────────────────────────
+// Builder ini otomatis mendukung .from().innerJoin().where().orderBy() 
+// tanpa peduli berapa kali di-chain atau apa urutannya di rute asli.
+const createMockQueryChain = (resolvedValue: unknown) => {
+  const chain = {
+    from: vi.fn().mockImplementation(() => chain),
+    innerJoin: vi.fn().mockImplementation(() => chain),
+    where: vi.fn().mockImplementation(() => chain),
+    orderBy: vi.fn().mockImplementation(() => chain),
+    // Menghasilkan nilai akhir saat di-await oleh Drizzle
+    then: (onFullfilled: any) => Promise.resolve(resolvedValue).then(onFullfilled)
+  };
+  return chain;
+};
+
 describe("Bookmarks API", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it("returns current user bookmarks", async () => {
-    const whereMock = vi.fn().mockReturnValue({
-      orderBy: vi.fn().mockResolvedValue([
+    // GET /bookmarks memanggil select 2 kali: list data & hitung total data
+    mockSelect
+      .mockReturnValueOnce(createMockQueryChain([
         {
           bookmarkId: "b1111111-1111-4111-8111-111111111111",
           jobId: "22222222-2222-4222-8222-222222222222",
           title: "Frontend Engineer",
           companyName: "Cognijob Labs"
         }
-      ])
-    });
-
-    mockSelect.mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        innerJoin: vi.fn().mockReturnValue({
-          innerJoin: vi.fn().mockReturnValue({
-            where: whereMock
-          })
-        })
-      })
-    });
+      ]))
+      .mockReturnValueOnce(createMockQueryChain([{ total: 1 }]));
 
     const response = await request(app).get("/bookmarks").set(authHeader);
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
-    expect(response.body.data).toHaveLength(1);
-    expect(response.body.data[0]).toMatchObject({
+    expect(response.body.data.bookmarks).toHaveLength(1);
+    expect(response.body.data.total).toBe(1);
+    expect(response.body.data.bookmarks[0]).toMatchObject({
       title: "Frontend Engineer",
       companyName: "Cognijob Labs"
     });
   });
 
   it("creates a bookmark for an existing job", async () => {
+    // Memastikan select pertama (cek lowongan) ada data, select kedua (cek duplikasi) kosong
     mockSelect
-      .mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([
-            {
-              jobId: "22222222-2222-4222-8222-222222222222"
-            }
-          ])
-        })
-      })
-      .mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([])
-        })
-      });
+      .mockReturnValueOnce(createMockQueryChain([
+        { jobId: "22222222-2222-4222-8222-222222222222", title: "Frontend Engineer" }
+      ]))
+      .mockReturnValueOnce(createMockQueryChain([]));
 
     mockInsert.mockReturnValue({
       values: vi.fn().mockReturnValue({
@@ -92,7 +90,8 @@ describe("Bookmarks API", () => {
           {
             bookmarkId: "b1111111-1111-4111-8111-111111111111",
             jobId: "22222222-2222-4222-8222-222222222222",
-            userId: "11111111-1111-4111-8111-111111111111"
+            userId: "11111111-1111-4111-8111-111111111111",
+            bookmarkedAt: new Date("2026-04-20T08:00:00.000Z")
           }
         ])
       })
@@ -108,25 +107,14 @@ describe("Bookmarks API", () => {
   });
 
   it("rejects duplicate bookmarks", async () => {
+    // Dua-duanya mengembalikan data (lowongan ada, dan data bookmark sudah eksis)
     mockSelect
-      .mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([
-            {
-              jobId: "22222222-2222-4222-8222-222222222222"
-            }
-          ])
-        })
-      })
-      .mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([
-            {
-              bookmarkId: "b1111111-1111-4111-8111-111111111111"
-            }
-          ])
-        })
-      });
+      .mockReturnValueOnce(createMockQueryChain([
+        { jobId: "22222222-2222-4222-8222-222222222222" }
+      ]))
+      .mockReturnValueOnce(createMockQueryChain([
+        { bookmarkId: "b1111111-1111-4111-8111-111111111111" }
+      ]));
 
     const response = await request(app)
       .post("/bookmarks/22222222-2222-4222-8222-222222222222")
@@ -134,19 +122,13 @@ describe("Bookmarks API", () => {
 
     expect(response.status).toBe(409);
     expect(response.body.success).toBe(false);
-    expect(response.body.message).toBe("Job is already bookmarked");
+    expect(response.body.message).toBe("Job already bookmarked");
   });
 
   it("deletes an existing bookmark", async () => {
-    mockSelect.mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([
-          {
-            bookmarkId: "b1111111-1111-4111-8111-111111111111"
-          }
-        ])
-      })
-    });
+    mockSelect.mockReturnValueOnce(createMockQueryChain([
+      { bookmarkId: "b1111111-1111-4111-8111-111111111111" }
+    ]));
 
     mockDelete.mockReturnValue({
       where: vi.fn().mockResolvedValue(undefined)

@@ -4,7 +4,7 @@ import { signAccessToken } from "../lib/jwt.js";
 
 const mockSelect = vi.fn();
 const mockUpdate = vi.fn();
-const mockTransaction = vi.fn();
+const mockInsert = vi.fn();
 const mockSupabaseUpload = vi.fn();
 const mockSupabaseGetPublicUrl = vi.fn();
 
@@ -16,7 +16,7 @@ vi.mock("../db/index.js", async () => {
     db: {
       select: mockSelect,
       update: mockUpdate,
-      transaction: mockTransaction
+      insert: mockInsert
     }
   };
 });
@@ -92,20 +92,42 @@ const profileRow: ProfileRow = {
   updatedAt: new Date("2026-04-26T10:00:00.000Z")
 };
 
-const mockSelectProfile = (...rows: ProfileRow[]) => {
-  const whereMock = vi
-    .fn()
-    .mockResolvedValueOnce(rows[0] ? [rows[0]] : [])
-    .mockResolvedValueOnce(rows[1] ? [rows[1]] : rows[0] ? [rows[0]] : []);
+// ─── UTILITY MOCK UTAMA YANG DISESUAIKAN KODE ASLI ───────────────────────────
 
-  mockSelect.mockReturnValue({
+// Memanfaatkan tracker callCount agar query pertama memberikan data User, 
+// dan query kedua memberikan data Profile (sesuai urutan await db.select() di rute)
+const mockProfileRead = (profile: ProfileRow | null = profileRow) => {
+  let callCount = 0;
+  mockSelect.mockImplementation(() => ({
     from: vi.fn().mockReturnValue({
-      innerJoin: vi.fn().mockReturnValue({
-        where: whereMock
+      where: vi.fn().mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) return [profileRow]; // Query pertama ke schema.users
+        return profile ? [profile] : [];         // Query kedua ke schema.jobSeekerProfiles
       })
+    })
+  }));
+};
+
+const mockInsertUpsert = () => {
+  const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
+  const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
+
+  mockInsert.mockReturnValue({ values });
+
+  return { values, onConflictDoUpdate };
+};
+
+// Fungsi pembantu mock untuk select single row (dipakai di PUT dan POST)
+const mockSingleSelect = (rows: unknown[]) => {
+  mockSelect.mockReturnValueOnce({
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue(rows)
     })
   });
 };
+
+// ─── TEST SUITE ──────────────────────────────────────────────────────────────
 
 describe("Profile API", () => {
   beforeEach(() => {
@@ -119,7 +141,7 @@ describe("Profile API", () => {
   });
 
   it("returns the authenticated job seeker profile", async () => {
-    mockSelectProfile(profileRow);
+    mockProfileRead(profileRow);
 
     const response = await request(app).get("/users/profile").set(authHeader);
 
@@ -127,12 +149,16 @@ describe("Profile API", () => {
     expect(response.body.success).toBe(true);
     expect(response.body.data).toMatchObject({
       userId: profileRow.userId,
-      name: profileRow.name
+      name: profileRow.name,
+      profile: {
+        skills: profileRow.skills,
+        cvFileName: profileRow.cvFileName
+      }
     });
   });
 
   it("returns a compact authenticated job seeker profile preview", async () => {
-    mockSelectProfile(profileRow);
+    mockProfileRead(profileRow);
 
     const response = await request(app).get("/users/profile/preview").set(authHeader);
 
@@ -154,24 +180,8 @@ describe("Profile API", () => {
       interests: "Product engineering and accessibility"
     };
 
-    mockSelectProfile(profileRow, {
-      ...updatedProfile,
-      profileCompleteness: 82
-    });
-
-    const txUpdateUserWhere = vi.fn().mockResolvedValue(undefined);
-    const txUpdateProfileWhere = vi.fn().mockResolvedValue(undefined);
-    const txUpdateUserSet = vi.fn().mockReturnValue({ where: txUpdateUserWhere });
-    const txUpdateProfileSet = vi.fn().mockReturnValue({ where: txUpdateProfileWhere });
-
-    const tx = {
-      update: vi
-        .fn()
-        .mockReturnValueOnce({ set: txUpdateUserSet })
-        .mockReturnValueOnce({ set: txUpdateProfileSet })
-    };
-
-    mockTransaction.mockImplementation(async (callback) => callback(tx));
+    mockSingleSelect([profileRow]);
+    const { values } = mockInsertUpsert();
 
     const response = await request(app).put("/users/profile").set(authHeader).send({
       skills: "React, TypeScript, Node.js",
@@ -180,9 +190,14 @@ describe("Profile API", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
-    expect(response.body.data.skills).toBe(updatedProfile.skills);
-    expect(response.body.data.interests).toBe(updatedProfile.interests);
-    expect(mockTransaction).toHaveBeenCalledTimes(1);
+    expect(response.body.message).toBe("Profile updated successfully");
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: profileRow.userId,
+        skills: updatedProfile.skills,
+        interests: updatedProfile.interests
+      })
+    );
   });
 
   it("uploads and saves the authenticated job seeker CV", async () => {
@@ -197,11 +212,8 @@ describe("Profile API", () => {
       profileCompleteness: 91
     };
 
-    mockSelectProfile(profileRow, updatedProfile);
-
-    const updateWhere = vi.fn().mockResolvedValue(undefined);
-    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
-    mockUpdate.mockReturnValue({ set: updateSet });
+    mockSingleSelect([profileRow]);
+    const { values } = mockInsertUpsert();
 
     const response = await request(app)
       .post("/users/cv")
@@ -216,6 +228,14 @@ describe("Profile API", () => {
     expect(response.body.data.cvUrl).toBe(updatedProfile.cvUrl);
     expect(response.body.data.cvFileName).toBe(updatedProfile.cvFileName);
     expect(mockSupabaseUpload).toHaveBeenCalledTimes(1);
-    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: profileRow.userId,
+        cvUrl: updatedProfile.cvUrl,
+        cvFileName: updatedProfile.cvFileName,
+        cvMimeType: updatedProfile.cvMimeType,
+        cvStoragePath: updatedProfile.cvStoragePath
+      })
+    );
   });
 });

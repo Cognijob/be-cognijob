@@ -10,7 +10,15 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/cognijob_test
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/cognijob_test
+      JWT_SECRET: ci-test-secret-1234567890
+      JWT_EXPIRES_IN: 1d
+      SUPABASE_URL: https://example.supabase.co
+      SUPABASE_SERVICE_ROLE_KEY: ci-test-service-role-key
+      SUPABASE_BUCKET: cv-files
+      APP_BASE_URL: http://localhost:3000
 
     steps:
       - name: Checkout code

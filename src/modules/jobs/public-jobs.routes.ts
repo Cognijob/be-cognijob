@@ -8,6 +8,7 @@ import { z } from "zod";
 import { db, schema } from "../../db/index.js";
 import { successResponse } from "../../lib/api-response.js";
 import { HttpError } from "../../lib/http-error.js";
+import { supabase } from "../../lib/supabase.js";
 import { validate } from "../../middlewares/validate.js";
 
 export const publicJobRouter = Router();
@@ -19,6 +20,8 @@ const publicJobQuerySchema = z.object({
   location: z.string().optional(),
   category: z.string().optional(),
   employment_type: z.string().optional(),
+  level: z.string().optional(),
+  skills: z.string().optional(),
   sort: z.enum(["created_at", "expires_at"]).default("created_at"),
   order: z.enum(["asc", "desc"]).default("desc")
 });
@@ -32,6 +35,10 @@ const publicJobSelect = {
   companyIndustry: schema.companies.industry,
   companyLocation: schema.companies.location,
   workplaceTag: schema.companies.workplaceTag,
+  website: schema.companies.website,
+  contactEmail: schema.companies.contactEmail,
+  foundedAt: schema.companies.foundedAt,
+  employeeCount: schema.companies.employeeCount,
   title: schema.jobListings.title,
   description: schema.jobListings.description,
   requirements: schema.jobListings.requirements,
@@ -39,6 +46,9 @@ const publicJobSelect = {
   location: schema.jobListings.location,
   category: schema.jobListings.category,
   salaryRange: schema.jobListings.salaryRange,
+  benefits: schema.jobListings.benefits,
+  skills: schema.jobListings.skills,
+  level: schema.jobListings.level,
   status: schema.jobListings.status,
   createdAt: schema.jobListings.createdAt,
   expiresAt: schema.jobListings.expiresAt
@@ -86,7 +96,7 @@ publicJobRouter.get(
   validate({ query: publicJobQuerySchema }),
   async (req, res, next) => {
     try {
-      const { page, limit, search, location, category, employment_type, sort, order } =
+      const { page, limit, search, location, category, employment_type, level, skills, sort, order } =
         req.query as unknown as z.infer<typeof publicJobQuerySchema>;
       const offset = (page - 1) * limit;
 
@@ -101,12 +111,15 @@ publicJobRouter.get(
           ? or(
               ilike(schema.jobListings.title, `%${search}%`),
               ilike(schema.jobListings.description, `%${search}%`),
-              ilike(schema.jobListings.category, `%${search}%`)
+              ilike(schema.jobListings.category, `%${search}%`),
+              ilike(schema.jobListings.skills, `%${search}%`)
             )
           : undefined,
         location ? ilike(schema.jobListings.location, `%${location}%`) : undefined,
         category ? ilike(schema.jobListings.category, `%${category}%`) : undefined,
-        employment_type ? eq(schema.jobListings.employmentType, employment_type) : undefined
+        employment_type ? eq(schema.jobListings.employmentType, employment_type) : undefined,
+        level ? eq(schema.jobListings.level, level) : undefined,
+        skills ? ilike(schema.jobListings.skills, `%${skills}%`) : undefined
       ].filter((f): f is NonNullable<typeof f> => Boolean(f));
 
       const whereClause = and(...filters);
@@ -188,6 +201,13 @@ publicJobRouter.get(
         );
 
       if (!job) throw new HttpError(404, "Job not found");
+
+      // Broadcast event when a job is viewed
+      await supabase.channel("public-jobs").send({
+        type: "broadcast",
+        event: "job_viewed",
+        payload: { jobId: id }
+      });
 
       return res.json(successResponse("Job fetched successfully", job));
     } catch (error) {

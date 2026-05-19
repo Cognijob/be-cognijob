@@ -1,183 +1,148 @@
+// src/modules/users/users.routes.ts
+// Endpoint untuk job seeker profile management.
+//
+// Routes:
+//   GET    /users/profile       → Ambil profil lengkap (user + job_seeker_profiles)
+//   PUT    /users/profile       → Update profil (data user + profil job seeker)
+//   POST   /users/cv            → Upload CV baru ke Supabase Storage (PDF ≤ 5 MB)
+//   POST   /users/photo         → Upload foto profil ke Supabase Storage
+//   DELETE /users/account       → Hapus akun sendiri
+
 import { eq } from "drizzle-orm";
-import { Router, type RequestHandler } from "express";
-import multer from "multer";
+import { Router } from "express";
+import { z } from "zod";
 import { env } from "../../config/env.js";
 import { db, schema } from "../../db/index.js";
 import { successResponse } from "../../lib/api-response.js";
 import { HttpError } from "../../lib/http-error.js";
 import { supabase } from "../../lib/supabase.js";
+import { hashPassword, comparePassword } from "../../lib/password.js";
+import { computeProfileCompleteness } from "../../lib/profile-completeness.js"; // Helper completeness
 import { authenticate } from "../../middlewares/authenticate.js";
 import { authorize } from "../../middlewares/authorize.js";
 import { validate } from "../../middlewares/validate.js";
-import { updateUserProfileSchema } from "./users.schemas.js";
+import { upload } from "../../middlewares/upload.js"; // Multer middleware
 
 export const userRouter = Router();
 
-const cvUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 5 * 1024 * 1024
-  },
-  fileFilter: (_req, file, callback) => {
-    const allowedMimeTypes = [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    ];
+// ─── Schemas ──────────────────────────────────────────────────────────────────
 
-    if (!allowedMimeTypes.includes(file.mimetype)) {
-      return callback(new HttpError(400, "CV file must be a PDF, DOC, or DOCX"));
-    }
+const updateProfileSchema = z.object({
+  // Data user (tabel users)
+  name:   z.string().trim().min(1).max(150).optional(),
+  gender: z.string().trim().max(50).nullable().optional(),
+  age:    z.number().int().min(0).nullable().optional(),
 
-    return callback(null, true);
-  }
+  // Data profil job seeker (tabel job_seeker_profiles)
+  // Bisa berupa string (JSON.stringify) atau object/array langsung.
+  skills:                 z.any().optional(),
+  portfolioLink:          z.url("portfolioLink must be a valid URL").nullable().optional(),
+  workExperience:         z.any().optional(),
+  awards:                 z.any().optional(),
+  organizationExperience: z.any().optional(),
+  interests:              z.any().optional(),
 });
 
-const handleCvUpload: RequestHandler = (req, res, next) => {
-  cvUpload.single("cv")(req, res, (error) => {
-    if (!error) {
-      return next();
-    }
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword:     z.string().min(8, "New password must be at least 8 characters"),
+});
 
-    if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
-      return next(new HttpError(400, "CV file must be 5MB or smaller"));
-    }
-
-    return next(error);
-  });
-};
-
-const userProfileSelect = {
-  userId: schema.users.userId,
-  name: schema.users.name,
-  email: schema.users.email,
-  role: schema.users.role,
-  gender: schema.users.gender,
-  age: schema.users.age,
-  photoUrl: schema.users.photoUrl,
-  skills: schema.jobSeekerProfiles.skills,
-  portfolioLink: schema.jobSeekerProfiles.portfolioLink,
-  workExperience: schema.jobSeekerProfiles.workExperience,
-  awards: schema.jobSeekerProfiles.awards,
+const profileSelect = {
+  skills:                 schema.jobSeekerProfiles.skills,
+  portfolioLink:          schema.jobSeekerProfiles.portfolioLink,
+  workExperience:         schema.jobSeekerProfiles.workExperience,
+  awards:                 schema.jobSeekerProfiles.awards,
   organizationExperience: schema.jobSeekerProfiles.organizationExperience,
-  interests: schema.jobSeekerProfiles.interests,
-  cvUrl: schema.jobSeekerProfiles.cvUrl,
-  cvFileName: schema.jobSeekerProfiles.cvFileName,
-  cvFileSize: schema.jobSeekerProfiles.cvFileSize,
-  cvMimeType: schema.jobSeekerProfiles.cvMimeType,
-  cvStoragePath: schema.jobSeekerProfiles.cvStoragePath,
-  cvUploadedAt: schema.jobSeekerProfiles.cvUploadedAt,
-  profileCompleteness: schema.jobSeekerProfiles.profileCompleteness,
-  updatedAt: schema.jobSeekerProfiles.updatedAt
+  interests:              schema.jobSeekerProfiles.interests,
+  cvUrl:                  schema.jobSeekerProfiles.cvUrl,
+  cvFileName:             schema.jobSeekerProfiles.cvFileName,
+  cvFileSize:             schema.jobSeekerProfiles.cvFileSize,
+  cvMimeType:             schema.jobSeekerProfiles.cvMimeType,
+  cvStoragePath:          schema.jobSeekerProfiles.cvStoragePath,
+  cvUploadedAt:           schema.jobSeekerProfiles.cvUploadedAt,
+  profileCompleteness:    schema.jobSeekerProfiles.profileCompleteness,
+  updatedAt:              schema.jobSeekerProfiles.updatedAt,
 };
 
-type UserProfile = typeof userProfileSelect extends Record<string, infer _Value>
-  ? {
-      userId: string;
-      name: string;
-      email: string;
-      role: string;
-      gender: string | null;
-      age: number | null;
-      photoUrl: string | null;
-      skills: string | null;
-      portfolioLink: string | null;
-      workExperience: string | null;
-      awards: string | null;
-      organizationExperience: string | null;
-      interests: string | null;
-      cvUrl: string | null;
-      cvFileName: string | null;
-      cvFileSize: number | null;
-      cvMimeType: string | null;
-      cvStoragePath: string | null;
-      cvUploadedAt: Date | null;
-      profileCompleteness: number;
-      updatedAt: Date;
-    }
-  : never;
-
-const hasValue = (value: unknown) => {
-  if (typeof value === "string") {
-    return value.trim().length > 0;
-  }
-
-  return value !== null && value !== undefined;
-};
-
-const calculateProfileCompleteness = (profile: Pick<
-  UserProfile,
-  | "name"
-  | "gender"
-  | "age"
-  | "photoUrl"
-  | "skills"
-  | "portfolioLink"
-  | "workExperience"
-  | "awards"
-  | "organizationExperience"
-  | "interests"
-  | "cvUrl"
->) => {
-  const fields = [
-    profile.name,
-    profile.gender,
-    profile.age,
-    profile.photoUrl,
-    profile.skills,
-    profile.portfolioLink,
-    profile.workExperience,
-    profile.awards,
-    profile.organizationExperience,
-    profile.interests,
-    profile.cvUrl
-  ];
-
-  const completed = fields.filter(hasValue).length;
-  return Math.round((completed / fields.length) * 100);
-};
-
-const getCurrentUserProfile = async (userId: string) => {
-  const [profile] = await db
-    .select(userProfileSelect)
-    .from(schema.users)
-    .innerJoin(schema.jobSeekerProfiles, eq(schema.jobSeekerProfiles.userId, schema.users.userId))
-    .where(eq(schema.users.userId, userId));
-
-  if (!profile) {
-    throw new HttpError(404, "User profile not found");
-  }
-
-  return profile as UserProfile;
-};
-
+// ─── GET /users/profile ───────────────────────────────────────────────────────
 /**
  * @swagger
  * /users/profile:
  *   get:
  *     tags: [Users]
- *     summary: Get current job seeker profile
+ *     summary: Get current user profile
+ *     description: |
+ *       Mengembalikan data user + profil job seeker dalam satu response.
+ *       Dipakai di halaman Profile: nama, lokasi, skill utama, pengalaman kerja,
+ *       bidang minat, prestasi, volunteering, CV URL, dan profile completeness.
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: User profile fetched successfully
- *       401:
- *         description: Authentication required
- *       403:
- *         description: Only job seekers can access this resource
- *       404:
- *         description: User profile not found
+ *         description: Profile fetched successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               data:
+ *                 userId: "uuid"
+ *                 name: "Rayanka Sadira Jiwita"
+ *                 email: "rayanka@email.com"
+ *                 role: "job_seeker"
+ *                 gender: "Female"
+ *                 age: 26
+ *                 photoUrl: "https://..."
+ *                 profile:
+ *                   skills: "Python, Django, Docker, REST API"
+ *                   workExperience: "[{...}]"
+ *                   awards: "[{...}]"
+ *                   organizationExperience: "[{...}]"
+ *                   interests: "Arsitektur Sistem, Skalabilitas"
+ *                   portfolioLink: "https://..."
+ *                   cvUrl: "https://..."
+ *                   profileCompleteness: 85
  */
-userRouter.get("/profile", authenticate, authorize("job_seeker"), async (req, res, next) => {
-  try {
-    const profile = await getCurrentUserProfile(req.user!.userId);
+userRouter.get(
+  "/profile",
+  authenticate,
+  async (req, res, next) => {
+    try {
+      const userId = req.user!.userId;
 
-    return res.json(successResponse("User profile fetched successfully", profile));
-  } catch (error) {
-    return next(error);
+      const [user] = await db
+        .select({
+          userId:    schema.users.userId,
+          name:      schema.users.name,
+          email:     schema.users.email,
+          role:      schema.users.role,
+          gender:    schema.users.gender,
+          age:       schema.users.age,
+          photoUrl:  schema.users.photoUrl,
+          createdAt: schema.users.createdAt,
+          updatedAt: schema.users.updatedAt,
+        })
+        .from(schema.users)
+        .where(eq(schema.users.userId, userId));
+
+      if (!user) throw new HttpError(404, "User not found");
+
+      // Profil job seeker — mungkin null jika belum dibuat
+      const [profile] = await db
+        .select(profileSelect)
+        .from(schema.jobSeekerProfiles)
+        .where(eq(schema.jobSeekerProfiles.userId, userId));
+
+      return res.json(
+        successResponse("Profile fetched successfully", {
+          ...user,
+          profile: profile ?? null,
+        })
+      );
+    } catch (error) {
+      return next(error);
+    }
   }
-});
+);
 
 /**
  * @swagger
@@ -189,35 +154,60 @@ userRouter.get("/profile", authenticate, authorize("job_seeker"), async (req, re
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: User profile preview fetched successfully
+ *         description: Profile preview fetched successfully
  */
-userRouter.get("/profile/preview", authenticate, authorize("job_seeker"), async (req, res, next) => {
-  try {
-    const profile = await getCurrentUserProfile(req.user!.userId);
+userRouter.get(
+  "/profile/preview",
+  authenticate,
+  authorize("job_seeker"),
+  async (req, res, next) => {
+    try {
+      const userId = req.user!.userId;
 
-    return res.json(
-      successResponse("User profile preview fetched successfully", {
-        userId: profile.userId,
-        name: profile.name,
-        photoUrl: profile.photoUrl,
-        headline: profile.skills,
-        portfolioLink: profile.portfolioLink,
-        cvUrl: profile.cvUrl,
-        profileCompleteness: profile.profileCompleteness,
-        hasCv: Boolean(profile.cvUrl)
-      })
-    );
-  } catch (error) {
-    return next(error);
+      const [user] = await db
+        .select({
+          userId:   schema.users.userId,
+          name:     schema.users.name,
+          photoUrl: schema.users.photoUrl,
+        })
+        .from(schema.users)
+        .where(eq(schema.users.userId, userId));
+
+      if (!user) throw new HttpError(404, "User not found");
+
+      const [profile] = await db
+        .select(profileSelect)
+        .from(schema.jobSeekerProfiles)
+        .where(eq(schema.jobSeekerProfiles.userId, userId));
+
+      return res.json(
+        successResponse("Profile preview fetched successfully", {
+          userId: user.userId,
+          name: user.name,
+          photoUrl: user.photoUrl,
+          headline: profile?.skills ?? null,
+          portfolioLink: profile?.portfolioLink ?? null,
+          cvUrl: profile?.cvUrl ?? null,
+          profileCompleteness: profile?.profileCompleteness ?? 0,
+          hasCv: Boolean(profile?.cvUrl),
+        })
+      );
+    } catch (error) {
+      return next(error);
+    }
   }
-});
+);
 
+// ─── PUT /users/profile ───────────────────────────────────────────────────────
 /**
  * @swagger
  * /users/profile:
  *   put:
  *     tags: [Users]
- *     summary: Update current job seeker profile
+ *     summary: Update current user profile
+ *     description: |
+ *       Update data user dan/atau profil job seeker sekaligus.
+ *       Profile completeness dihitung ulang otomatis setiap kali ada update.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -227,129 +217,88 @@ userRouter.get("/profile/preview", authenticate, authorize("job_seeker"), async 
  *           schema:
  *             type: object
  *             properties:
- *               name:
- *                 type: string
- *                 example: Naura Belva
- *               gender:
- *                 type: string
- *                 nullable: true
- *                 example: female
- *               age:
- *                 type: integer
- *                 nullable: true
- *                 example: 20
- *               photoUrl:
- *                 type: string
- *                 format: uri
- *                 nullable: true
- *               skills:
- *                 type: string
- *                 nullable: true
- *                 example: React, TypeScript, UI Testing
- *               portfolioLink:
- *                 type: string
- *                 format: uri
- *                 nullable: true
- *               workExperience:
- *                 type: string
- *                 nullable: true
- *               awards:
- *                 type: string
- *                 nullable: true
- *               organizationExperience:
- *                 type: string
- *                 nullable: true
- *               interests:
- *                 type: string
- *                 nullable: true
+ *               name:                   { type: string }
+ *               gender:                 { type: string }
+ *               age:                    { type: integer }
+ *               skills:                 { type: string, description: "Comma-separated atau JSON string" }
+ *               portfolioLink:          { type: string, format: uri }
+ *               workExperience:         { type: string, description: "JSON string array of work history" }
+ *               awards:                 { type: string, description: "JSON string array of awards" }
+ *               organizationExperience: { type: string, description: "JSON string array of org experience" }
+ *               interests:              { type: string, description: "Comma-separated bidang minat" }
  *     responses:
  *       200:
- *         description: User profile updated successfully
- *       400:
- *         description: Validation failed
- *       401:
- *         description: Authentication required
- *       403:
- *         description: Only job seekers can access this resource
- *       404:
- *         description: User profile not found
+ *         description: Profile updated successfully
  */
 userRouter.put(
   "/profile",
   authenticate,
-  authorize("job_seeker"),
-  validate({ body: updateUserProfileSchema }),
+  validate({ body: updateProfileSchema }),
   async (req, res, next) => {
     try {
-      const payload = req.body as typeof req.body;
-      const currentProfile = await getCurrentUserProfile(req.user!.userId);
+      const userId = req.user!.userId;
+      const body = req.body as z.infer<typeof updateProfileSchema>;
 
-      const userPayload = {
-        name: payload.name,
-        gender: payload.gender,
-        age: payload.age,
-        photoUrl: payload.photoUrl
-      };
+      // Pisahkan field user vs field profil
+      const userFields: Partial<typeof schema.users.$inferInsert> = {};
+      if (body.name   !== undefined) userFields.name   = body.name;
+      if (body.gender !== undefined) userFields.gender = body.gender;
+      if (body.age    !== undefined) userFields.age    = body.age;
 
-      const profilePayload = {
-        skills: payload.skills,
-        portfolioLink: payload.portfolioLink,
-        workExperience: payload.workExperience,
-        awards: payload.awards,
-        organizationExperience: payload.organizationExperience,
-        interests: payload.interests
-      };
+      const profileFields: Partial<typeof schema.jobSeekerProfiles.$inferInsert> = {};
+      if (body.skills                 !== undefined) profileFields.skills                 = body.skills;
+      if (body.portfolioLink          !== undefined) profileFields.portfolioLink          = body.portfolioLink;
+      if (body.workExperience         !== undefined) profileFields.workExperience         = body.workExperience;
+      if (body.awards                 !== undefined) profileFields.awards                 = body.awards;
+      if (body.organizationExperience !== undefined) profileFields.organizationExperience = body.organizationExperience;
+      if (body.interests              !== undefined) profileFields.interests              = body.interests;
 
-      const nextProfileForCompleteness = {
-        ...currentProfile,
-        ...Object.fromEntries(Object.entries(userPayload).filter(([, value]) => value !== undefined)),
-        ...Object.fromEntries(Object.entries(profilePayload).filter(([, value]) => value !== undefined))
-      };
-      const profileCompleteness = calculateProfileCompleteness(nextProfileForCompleteness);
+      // Update tabel users jika ada field-nya
+      if (Object.keys(userFields).length > 0) {
+        await db
+          .update(schema.users)
+          .set({ ...userFields, updatedAt: new Date() })
+          .where(eq(schema.users.userId, userId));
+      }
 
-      await db.transaction(async (tx) => {
-        const nextUserPayload = Object.fromEntries(
-          Object.entries(userPayload).filter(([, value]) => value !== undefined)
-        );
-        const nextProfilePayload = Object.fromEntries(
-          Object.entries(profilePayload).filter(([, value]) => value !== undefined)
-        );
+      // Upsert job_seeker_profiles jika ada field profil
+      if (Object.keys(profileFields).length > 0) {
+        // Ambil profil terkini untuk hitung completeness
+        const [existing] = await db
+          .select()
+          .from(schema.jobSeekerProfiles)
+          .where(eq(schema.jobSeekerProfiles.userId, userId));
 
-        if (Object.keys(nextUserPayload).length > 0) {
-          await tx
-            .update(schema.users)
-            .set({
-              ...nextUserPayload,
-              updatedAt: new Date()
-            })
-            .where(eq(schema.users.userId, req.user!.userId));
-        }
+        const merged = { ...(existing ?? {}), ...profileFields };
+        const profileCompleteness = computeProfileCompleteness(merged);
 
-        await tx
-          .update(schema.jobSeekerProfiles)
-          .set({
-            ...nextProfilePayload,
-            profileCompleteness,
-            updatedAt: new Date()
-          })
-          .where(eq(schema.jobSeekerProfiles.userId, req.user!.userId));
-      });
+        await db
+          .insert(schema.jobSeekerProfiles)
+          .values({ userId, ...profileFields, profileCompleteness })
+          .onConflictDoUpdate({
+            target: schema.jobSeekerProfiles.userId,
+            set: { ...profileFields, profileCompleteness, updatedAt: new Date() },
+          });
+      }
 
-      const updatedProfile = await getCurrentUserProfile(req.user!.userId);
-
-      return res.json(successResponse("User profile updated successfully", updatedProfile));
+      return res.json(successResponse("Profile updated successfully"));
     } catch (error) {
       return next(error);
     }
   }
 );
 
+// ─── POST /users/cv ───────────────────────────────────────────────────────────
 /**
  * @swagger
  * /users/cv:
  *   post:
  *     tags: [Users]
- *     summary: Upload current job seeker CV
+ *     summary: Upload or replace CV (PDF ≤ 5 MB)
+ *     description: |
+ *       Upload CV ke Supabase Storage. Hanya menerima PDF, maks 5 MB.
+ *       URL hasil upload disimpan di job_seeker_profiles.cv_url.
+ *       Dipakai di halaman Profile ("Edit CV") dan form lamaran ("Gunakan CV dari profil saya").
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -363,69 +312,256 @@ userRouter.put(
  *               cv:
  *                 type: string
  *                 format: binary
+ *                 description: File PDF, maks 5 MB
  *     responses:
  *       200:
  *         description: CV uploaded successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               data: { cvUrl: "https://..." }
  *       400:
- *         description: CV file is required
- *       401:
- *         description: Authentication required
- *       403:
- *         description: Only job seekers can access this resource
- *       404:
- *         description: User profile not found
+ *         description: File bukan PDF atau melebihi 5 MB
  */
 userRouter.post(
   "/cv",
   authenticate,
   authorize("job_seeker"),
-  handleCvUpload,
+  upload.single("cv"),
   async (req, res, next) => {
     try {
-      if (!req.file) {
-        throw new HttpError(400, "CV file is required");
+      const userId = req.user!.userId;
+      const file = req.file;
+
+      if (!file) throw new HttpError(400, "CV file is required");
+
+      // Validasi format
+      if (file.mimetype !== "application/pdf") {
+        throw new HttpError(400, "Only PDF files are accepted");
       }
 
-      const currentProfile = await getCurrentUserProfile(req.user!.userId);
+      // Validasi ukuran (5 MB)
+      const MAX_SIZE = 5 * 1024 * 1024;
+      if (file.size > MAX_SIZE) {
+        throw new HttpError(400, "File size must not exceed 5 MB");
+      }
 
-      const extension = req.file.originalname.split(".").pop()?.toLowerCase() ?? "pdf";
-      const filePath = `${req.user!.userId}/cv-${Date.now()}.${extension}`;
-
+      const uploadedAt = new Date();
+      const filePath = `${userId}/cv.pdf`;
       const { error: uploadError } = await supabase.storage
         .from(env.SUPABASE_BUCKET)
-        .upload(filePath, req.file.buffer, {
-          contentType: req.file.mimetype,
-          upsert: true
+        .upload(filePath, file.buffer, {
+          contentType: "application/pdf",
+          upsert: true,
         });
 
       if (uploadError) {
-        throw new HttpError(500, "Failed to upload CV", uploadError.message);
+        throw new HttpError(500, `Failed to upload CV: ${uploadError.message}`);
       }
 
-      const { data } = supabase.storage.from(env.SUPABASE_BUCKET).getPublicUrl(filePath);
-      const uploadedAt = new Date();
-      const profileCompleteness = calculateProfileCompleteness({
-        ...currentProfile,
-        cvUrl: data.publicUrl
-      });
+      const { data: urlData } = supabase.storage
+        .from(env.SUPABASE_BUCKET)
+        .getPublicUrl(filePath);
+
+      const cvUrl = urlData.publicUrl;
+      const cvFields = {
+        cvUrl,
+        cvFileName: file.originalname,
+        cvFileSize: file.size,
+        cvMimeType: file.mimetype,
+        cvStoragePath: filePath,
+        cvUploadedAt: uploadedAt,
+      };
+
+      const [existing] = await db
+        .select()
+        .from(schema.jobSeekerProfiles)
+        .where(eq(schema.jobSeekerProfiles.userId, userId));
+
+      const profileCompleteness = computeProfileCompleteness({ ...(existing ?? {}), ...cvFields });
 
       await db
-        .update(schema.jobSeekerProfiles)
-        .set({
-          cvUrl: data.publicUrl,
-          cvFileName: req.file.originalname,
-          cvFileSize: req.file.size,
-          cvMimeType: req.file.mimetype,
-          cvStoragePath: filePath,
-          cvUploadedAt: uploadedAt,
+        .insert(schema.jobSeekerProfiles)
+        .values({ userId, ...cvFields, profileCompleteness })
+        .onConflictDoUpdate({
+          target: schema.jobSeekerProfiles.userId,
+          set: { ...cvFields, profileCompleteness, updatedAt: new Date() },
+        });
+
+      return res.json(
+        successResponse("CV uploaded successfully", {
+          ...cvFields,
           profileCompleteness,
-          updatedAt: new Date()
         })
-        .where(eq(schema.jobSeekerProfiles.userId, req.user!.userId));
+      );
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
 
-      const updatedProfile = await getCurrentUserProfile(req.user!.userId);
+// ─── POST /users/photo ────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /users/photo:
+ *   post:
+ *     tags: [Users]
+ *     summary: Upload or replace profile photo
+ *     description: |
+ *       Upload foto profil ke Supabase Storage.
+ *       Menerima JPEG/PNG/WEBP, maks 2 MB.
+ *       URL disimpan di users.photo_url.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [photo]
+ *             properties:
+ *               photo:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Photo uploaded successfully
+ *       400:
+ *         description: Format tidak didukung atau ukuran melebihi 2 MB
+ */
+userRouter.post(
+  "/photo",
+  authenticate,
+  upload.single("photo"),
+  async (req, res, next) => {
+    try {
+      const userId = req.user!.userId;
+      const file = req.file;
 
-      return res.json(successResponse("CV uploaded successfully", updatedProfile));
+      if (!file) throw new HttpError(400, "Photo file is required");
+
+      const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+      if (!ALLOWED_TYPES.includes(file.mimetype)) {
+        throw new HttpError(400, "Only JPEG, PNG, or WEBP images are accepted");
+      }
+
+      const MAX_SIZE = 2 * 1024 * 1024;
+      if (file.size > MAX_SIZE) {
+        throw new HttpError(400, "Photo size must not exceed 2 MB");
+      }
+
+      const ext = file.mimetype.split("/")[1];
+      const filePath = `${userId}/photo.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("profile-photos")
+        .upload(filePath, file.buffer, {
+          contentType: file.mimetype,
+          upsert: true,
+        });
+
+      if (uploadError) {
+        throw new HttpError(500, `Failed to upload photo: ${uploadError.message}`);
+      }
+
+      const { data: urlData } = supabase.storage
+        .from("profile-photos")
+        .getPublicUrl(filePath);
+
+      const photoUrl = urlData.publicUrl;
+
+      await db
+        .update(schema.users)
+        .set({ photoUrl, updatedAt: new Date() })
+        .where(eq(schema.users.userId, userId));
+
+      return res.json(successResponse("Photo uploaded successfully", { photoUrl }));
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+// ─── POST /users/change-password ──────────────────────────────────────────────
+/**
+ * @swagger
+ * /users/change-password:
+ *   post:
+ *     tags: [Users]
+ *     summary: Change password
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [currentPassword, newPassword]
+ *             properties:
+ *               currentPassword: { type: string }
+ *               newPassword:     { type: string, minLength: 8 }
+ *     responses:
+ *       200:
+ *         description: Password changed successfully
+ *       400:
+ *         description: Current password is incorrect
+ */
+userRouter.post(
+  "/change-password",
+  authenticate,
+  validate({ body: changePasswordSchema }),
+  async (req, res, next) => {
+    try {
+      const userId = req.user!.userId;
+      const { currentPassword, newPassword } = req.body as z.infer<typeof changePasswordSchema>;
+
+      const [user] = await db
+        .select({ passwordHash: schema.users.passwordHash })
+        .from(schema.users)
+        .where(eq(schema.users.userId, userId));
+
+      if (!user) throw new HttpError(404, "User not found");
+
+      const valid = await comparePassword(currentPassword, user.passwordHash);
+      if (!valid) throw new HttpError(400, "Current password is incorrect");
+
+      const newHash = await hashPassword(newPassword);
+      await db
+        .update(schema.users)
+        .set({ passwordHash: newHash, updatedAt: new Date() })
+        .where(eq(schema.users.userId, userId));
+
+      return res.json(successResponse("Password changed successfully"));
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+// ─── DELETE /users/account ────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /users/account:
+ *   delete:
+ *     tags: [Users]
+ *     summary: Delete own account
+ *     description: Hapus akun permanen. Semua data terkait (profil, lamaran, dll) ikut terhapus via CASCADE.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Account deleted successfully
+ */
+userRouter.delete(
+  "/account",
+  authenticate,
+  async (req, res, next) => {
+    try {
+      const userId = req.user!.userId;
+      await db.delete(schema.users).where(eq(schema.users.userId, userId));
+      return res.json(successResponse("Account deleted successfully"));
     } catch (error) {
       return next(error);
     }

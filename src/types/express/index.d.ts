@@ -1,3 +1,4 @@
+/// <reference types="multer" />
 import type { UserRole } from "../../db/schema.js";
 
 declare global {

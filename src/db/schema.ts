@@ -1,5 +1,6 @@
 import {
   boolean,
+  date,
   check,
   index,
   integer,
@@ -9,7 +10,8 @@ import {
   timestamp,
   unique,
   uuid,
-  varchar
+  varchar,
+  jsonb
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -61,6 +63,10 @@ export const companies = pgTable("companies", {
   location: varchar("location", { length: 150 }),
   workplaceTag: varchar("workplace_tag", { length: 150 }),
   description: text("description"),
+  website: varchar("website", { length: 255 }),
+  contactEmail: varchar("contact_email", { length: 255 }),
+  foundedAt: date("founded_at"),
+  employeeCount: varchar("employee_count", { length: 50 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 });
@@ -96,10 +102,10 @@ export const jobSeekerProfiles = pgTable(
       .references(() => users.userId, { onDelete: "cascade" }),
     skills: text("skills"),
     portfolioLink: text("portfolio_link"),
-    workExperience: text("work_experience"),
-    awards: text("awards"),
-    organizationExperience: text("organization_experience"),
-    interests: text("interests"),
+    workExperience: jsonb("work_experience"),
+    awards: jsonb("awards"),
+    organizationExperience: jsonb("organization_experience"),
+    interests: jsonb("interests"),
     cvUrl: text("cv_url"),
     cvFileName: text("cv_file_name"),
     cvFileSize: integer("cv_file_size"),
@@ -141,6 +147,44 @@ export const jobApplications = pgTable(
     jobIdx: index("idx_job_applications_job_id").on(table.jobId),
     userIdx: index("idx_job_applications_user_id").on(table.userId),
     statusIdx: index("idx_job_applications_recruiter_status").on(table.recruiterStatus)
+  })
+);
+
+// ─── BOOKMARKS ────────────────────────────────────────────────────────────────
+export const bookmarks = pgTable(
+  "bookmarks",
+  {
+    bookmarkId: uuid("bookmark_id").defaultRandom().primaryKey(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => jobListings.jobId, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.userId, { onDelete: "cascade" }),
+    bookmarkedAt: timestamp("bookmarked_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    uniqueBookmark: unique("uq_user_job_bookmark").on(table.jobId, table.userId),
+    userIdx: index("idx_bookmarks_user_id").on(table.userId)
+  })
+);
+
+export const companyFollows = pgTable(
+  "company_follows",
+  {
+    followId: uuid("follow_id").defaultRandom().primaryKey(),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.companyId, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.userId, { onDelete: "cascade" }),
+    followedAt: timestamp("followed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqueFollow: unique("uq_user_company_follow").on(table.companyId, table.userId),
+    userIdx:    index("idx_company_follows_user_id").on(table.userId),
+    companyIdx: index("idx_company_follows_company_id").on(table.companyId),
   })
 );
 
@@ -279,6 +323,9 @@ export const jobListings = pgTable(
     location: varchar("location", { length: 150 }),
     category: varchar("category", { length: 100 }),
     salaryRange: varchar("salary_range", { length: 100 }),
+    benefits: text("benefits"),
+    skills: text("skills"),
+    level: varchar("level", { length: 50 }),
     status: jobStatusEnum("status").notNull().default("draft"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
@@ -287,25 +334,6 @@ export const jobListings = pgTable(
   (table) => ({
     companyIdx: index("idx_job_listings_company_id").on(table.companyId),
     statusIdx: index("idx_job_listings_status").on(table.status)
-  })
-);
-
-// ─── BOOKMARKS ────────────────────────────────────────────────────────────────
-export const bookmarks = pgTable(
-  "bookmarks",
-  {
-    bookmarkId: uuid("bookmark_id").defaultRandom().primaryKey(),
-    jobId: uuid("job_id")
-      .notNull()
-      .references(() => jobListings.jobId, { onDelete: "cascade" }),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.userId, { onDelete: "cascade" }),
-    bookmarkedAt: timestamp("bookmarked_at", { withTimezone: true }).notNull().defaultNow()
-  },
-  (table) => ({
-    uniqueUserJobBookmark: unique("uq_user_job_bookmark").on(table.jobId, table.userId),
-    userIdx: index("idx_bookmarks_user_id").on(table.userId)
   })
 );
 

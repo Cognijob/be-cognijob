@@ -8,6 +8,7 @@ export default defineConfig({
   dbCredentials: {
     // Gunakan DIRECT_URL untuk migrations (bukan pooler)
     // Pooler tidak support DDL statements yang dibutuhkan drizzle-kit
-    url: process.env.DIRECT_URL ?? process.env.DATABASE_URL ?? ""
+    url: process.env.DIRECT_URL ?? process.env.DATABASE_URL ?? "",
+    ssl: { rejectUnauthorized: false } as any
   }
 });

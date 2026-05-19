@@ -2,7 +2,7 @@
 // Endpoint job untuk publik (job seeker browse).
 // Recruiter CRUD sudah ada di jobs.routes.ts — file ini tidak mengubahnya.
 
-import { and, asc, count, desc, eq, gt, ilike, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, ilike, isNull, or } from "drizzle-orm";
 import { Router } from "express";
 import { z } from "zod";
 import { db, schema } from "../../db/index.js";
@@ -104,7 +104,7 @@ publicJobRouter.get(
         eq(schema.jobListings.status, "published"),
         // Exclude expired jobs
         or(
-          eq(schema.jobListings.expiresAt, null as any),
+          isNull(schema.jobListings.expiresAt),
           gt(schema.jobListings.expiresAt, new Date())
         ),
         search

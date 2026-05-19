@@ -11,6 +11,7 @@
 import { eq } from "drizzle-orm";
 import { Router } from "express";
 import { z } from "zod";
+import { env } from "../../config/env.js";
 import { db, schema } from "../../db/index.js";
 import { successResponse } from "../../lib/api-response.js";
 import { HttpError } from "../../lib/http-error.js";
@@ -46,6 +47,23 @@ const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
   newPassword:     z.string().min(8, "New password must be at least 8 characters"),
 });
+
+const profileSelect = {
+  skills:                 schema.jobSeekerProfiles.skills,
+  portfolioLink:          schema.jobSeekerProfiles.portfolioLink,
+  workExperience:         schema.jobSeekerProfiles.workExperience,
+  awards:                 schema.jobSeekerProfiles.awards,
+  organizationExperience: schema.jobSeekerProfiles.organizationExperience,
+  interests:              schema.jobSeekerProfiles.interests,
+  cvUrl:                  schema.jobSeekerProfiles.cvUrl,
+  cvFileName:             schema.jobSeekerProfiles.cvFileName,
+  cvFileSize:             schema.jobSeekerProfiles.cvFileSize,
+  cvMimeType:             schema.jobSeekerProfiles.cvMimeType,
+  cvStoragePath:          schema.jobSeekerProfiles.cvStoragePath,
+  cvUploadedAt:           schema.jobSeekerProfiles.cvUploadedAt,
+  profileCompleteness:    schema.jobSeekerProfiles.profileCompleteness,
+  updatedAt:              schema.jobSeekerProfiles.updatedAt,
+};
 
 // ─── GET /users/profile ───────────────────────────────────────────────────────
 /**
@@ -110,17 +128,7 @@ userRouter.get(
 
       // Profil job seeker — mungkin null jika belum dibuat
       const [profile] = await db
-        .select({
-          skills:                 schema.jobSeekerProfiles.skills,
-          portfolioLink:          schema.jobSeekerProfiles.portfolioLink,
-          workExperience:         schema.jobSeekerProfiles.workExperience,
-          awards:                 schema.jobSeekerProfiles.awards,
-          organizationExperience: schema.jobSeekerProfiles.organizationExperience,
-          interests:              schema.jobSeekerProfiles.interests,
-          cvUrl:                  schema.jobSeekerProfiles.cvUrl,
-          profileCompleteness:    schema.jobSeekerProfiles.profileCompleteness,
-          updatedAt:              schema.jobSeekerProfiles.updatedAt,
-        })
+        .select(profileSelect)
         .from(schema.jobSeekerProfiles)
         .where(eq(schema.jobSeekerProfiles.userId, userId));
 
@@ -128,6 +136,60 @@ userRouter.get(
         successResponse("Profile fetched successfully", {
           ...user,
           profile: profile ?? null,
+        })
+      );
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /users/profile/preview:
+ *   get:
+ *     tags: [Users]
+ *     summary: Get compact current job seeker profile preview
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Profile preview fetched successfully
+ */
+userRouter.get(
+  "/profile/preview",
+  authenticate,
+  authorize("job_seeker"),
+  async (req, res, next) => {
+    try {
+      const userId = req.user!.userId;
+
+      const [user] = await db
+        .select({
+          userId:   schema.users.userId,
+          name:     schema.users.name,
+          photoUrl: schema.users.photoUrl,
+        })
+        .from(schema.users)
+        .where(eq(schema.users.userId, userId));
+
+      if (!user) throw new HttpError(404, "User not found");
+
+      const [profile] = await db
+        .select(profileSelect)
+        .from(schema.jobSeekerProfiles)
+        .where(eq(schema.jobSeekerProfiles.userId, userId));
+
+      return res.json(
+        successResponse("Profile preview fetched successfully", {
+          userId: user.userId,
+          name: user.name,
+          photoUrl: user.photoUrl,
+          headline: profile?.skills ?? null,
+          portfolioLink: profile?.portfolioLink ?? null,
+          cvUrl: profile?.cvUrl ?? null,
+          profileCompleteness: profile?.profileCompleteness ?? 0,
+          hasCv: Boolean(profile?.cvUrl),
         })
       );
     } catch (error) {
@@ -284,36 +346,54 @@ userRouter.post(
         throw new HttpError(400, "File size must not exceed 5 MB");
       }
 
-      // Upload ke Supabase Storage — path: cv-files/{userId}/cv.pdf
+      const uploadedAt = new Date();
       const filePath = `${userId}/cv.pdf`;
       const { error: uploadError } = await supabase.storage
-        .from("cv-files")
+        .from(env.SUPABASE_BUCKET)
         .upload(filePath, file.buffer, {
           contentType: "application/pdf",
-          upsert: true, // replace jika sudah ada
+          upsert: true,
         });
 
       if (uploadError) {
         throw new HttpError(500, `Failed to upload CV: ${uploadError.message}`);
       }
 
-      // Ambil public URL
       const { data: urlData } = supabase.storage
-        .from("cv-files")
+        .from(env.SUPABASE_BUCKET)
         .getPublicUrl(filePath);
 
       const cvUrl = urlData.publicUrl;
+      const cvFields = {
+        cvUrl,
+        cvFileName: file.originalname,
+        cvFileSize: file.size,
+        cvMimeType: file.mimetype,
+        cvStoragePath: filePath,
+        cvUploadedAt: uploadedAt,
+      };
 
-      // Simpan URL ke profil — upsert jika profil belum ada
+      const [existing] = await db
+        .select()
+        .from(schema.jobSeekerProfiles)
+        .where(eq(schema.jobSeekerProfiles.userId, userId));
+
+      const profileCompleteness = computeProfileCompleteness({ ...(existing ?? {}), ...cvFields });
+
       await db
         .insert(schema.jobSeekerProfiles)
-        .values({ userId, cvUrl, profileCompleteness: 0 })
+        .values({ userId, ...cvFields, profileCompleteness })
         .onConflictDoUpdate({
           target: schema.jobSeekerProfiles.userId,
-          set: { cvUrl, updatedAt: new Date() },
+          set: { ...cvFields, profileCompleteness, updatedAt: new Date() },
         });
 
-      return res.json(successResponse("CV uploaded successfully", { cvUrl }));
+      return res.json(
+        successResponse("CV uploaded successfully", {
+          ...cvFields,
+          profileCompleteness,
+        })
+      );
     } catch (error) {
       return next(error);
     }

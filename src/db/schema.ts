@@ -107,6 +107,11 @@ export const jobSeekerProfiles = pgTable(
     organizationExperience: jsonb("organization_experience"),
     interests: jsonb("interests"),
     cvUrl: text("cv_url"),
+    cvFileName: text("cv_file_name"),
+    cvFileSize: integer("cv_file_size"),
+    cvMimeType: varchar("cv_mime_type", { length: 150 }),
+    cvStoragePath: text("cv_storage_path"),
+    cvUploadedAt: timestamp("cv_uploaded_at", { withTimezone: true }),
     profileCompleteness: integer("profile_completeness").notNull().default(0),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },

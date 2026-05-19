@@ -18,6 +18,7 @@ import { validate } from "../../middlewares/validate.js";
 import type { RecruiterApplicationStatus } from "../../db/schema.js";
 
 export const applicationRouter = Router();
+export const jobApplicantsRouter = Router();
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -370,8 +371,8 @@ applicationRouter.get(
  *       403:
  *         description: Access denied
  */
-applicationRouter.get(
-  "/jobs/:jobId/applicants",
+jobApplicantsRouter.get(
+  "/:jobId/applicants",
   authenticate,
   authorize("recruiter"),
   validate({ params: jobApplicantsParamsSchema, query: applicantListQuerySchema }),

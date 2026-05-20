@@ -1,6 +1,7 @@
 import { and, eq, gt, lte } from "drizzle-orm";
 import { db, schema } from "../db/index.js";
 import type { NotificationType } from "../db/schema.js";
+import { supabase } from "./supabase.js";
 
 interface CreateNotificationParams {
   userId: string;
@@ -10,9 +11,9 @@ interface CreateNotificationParams {
   referenceId?: string;
 }
 
-// Tidak throw — notifikasi tidak boleh break main flow
 export const createNotification = async (params: CreateNotificationParams) => {
   try {
+    // 1. Simpan ke Database (Paling Utama)
     const [notif] = await db
       .insert(schema.notifications)
       .values({
@@ -24,9 +25,26 @@ export const createNotification = async (params: CreateNotificationParams) => {
         isRead: false
       })
       .returning();
+
+    // 2. Kirim Realtime (Broadcast)
+    // Jika bagian ini gagal, tidak akan membatalkan suksesnya simpan ke DB
+    try {
+      if (notif) {
+        await supabase
+          .channel('notifications')
+          .send({
+            type: 'broadcast',
+            event: 'new-notification',
+            payload: { ...notif }
+          });
+      }
+    } catch (realtimeErr) {
+      console.warn("[NotificationService] Realtime broadcast failed:", realtimeErr);
+    }
+
     return notif;
   } catch (err) {
-    console.error("[NotificationService] Failed:", err);
+    console.error("[NotificationService] DB Insert Failed:", err);
     return null;
   }
 };

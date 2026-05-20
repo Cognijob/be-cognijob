@@ -12,7 +12,11 @@ const jobMutationFieldsSchema = z.object({
   category: z.string().trim().min(1).max(100).optional(),
   salaryRange: z.string().trim().max(100).nullable().optional(),
   status: jobStatusSchema.optional(),
-  expiresAt: optionalDateSchema
+  expiresAt: optionalDateSchema,
+  // 🎯 GAP ANALYSIS FIX: Menambahkan field agar sinkron dengan database
+  benefits: z.string().trim().nullable().optional(),
+  level: z.string().trim().max(50).nullable().optional(),
+  skills: z.array(z.string()).nullable().optional(),
 });
 
 export const jobParamsSchema = z.object({

@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, or } from "drizzle-orm";
+import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { Router } from "express";
 import { db, schema } from "../../db/index.js";
 import { ensureRecruiterCanAccessJob, ensureRecruiterCompanyMembership } from "../../lib/access.js";
@@ -7,6 +7,7 @@ import { HttpError } from "../../lib/http-error.js";
 import { authenticate } from "../../middlewares/authenticate.js";
 import { authorize } from "../../middlewares/authorize.js";
 import { validate } from "../../middlewares/validate.js";
+import { jobSummaryRouter } from "./jobs-summary.routes.js";
 import {
   createJobSchema,
   jobParamsSchema,
@@ -15,6 +16,8 @@ import {
 } from "./jobs.schemas.js";
 
 export const jobRouter = Router();
+
+jobRouter.use("/summary", jobSummaryRouter);
 
 const ensurePublishableJobPayload = (payload: {
   title?: string | null;
@@ -60,7 +63,24 @@ const jobSelect = {
   status: schema.jobListings.status,
   createdAt: schema.jobListings.createdAt,
   expiresAt: schema.jobListings.expiresAt,
-  updatedAt: schema.jobListings.updatedAt
+  updatedAt: schema.jobListings.updatedAt,
+
+  // 🎯 FIX GAP ANALYSIS: Menambahkan fields ke detail response
+  benefits: schema.jobListings.benefits,
+  level: schema.jobListings.level,
+  skills: schema.jobListings.skills,
+
+  // 🎯 FIX GAP ANALYSIS : Menggunakan nama kolom 'recruiterStatus' dan nilai 'submitted'
+  applicantCount: sql<number>`(
+    SELECT count(*)::int FROM ${schema.jobApplications} 
+    WHERE ${schema.jobApplications.jobId} = ${schema.jobListings.jobId}
+  )`.as("applicant_count"),
+  
+  pendingReviewCount: sql<number>`(
+    SELECT count(*)::int FROM ${schema.jobApplications} 
+    WHERE ${schema.jobApplications.jobId} = ${schema.jobListings.jobId}
+    AND ${schema.jobApplications.recruiterStatus} = 'submitted'
+  )`.as("pending_review_count")
 };
 
 /**
@@ -247,33 +267,30 @@ jobRouter.get(
  *       404:
  *         description: Job not found
  */
-jobRouter.get(
-  "/:id",
-  authenticate,
-  authorize("recruiter"),
-  validate({ params: jobParamsSchema }),
-  async (req, res, next) => {
-    try {
-      const { id } = req.params as { id: string };
+  jobRouter.get(
+    "/:id",
+    authenticate,
+    authorize("recruiter"),
+    validate({ params: jobParamsSchema }),
+    async (req, res, next) => {
+      try {
+        const { id } = req.params as { id: string };
+        await ensureRecruiterCanAccessJob(req.user!.userId, id);
 
-      await ensureRecruiterCanAccessJob(req.user!.userId, id);
+        // KODE JADI JAUH LEBIH BERSIH & FITUR TETAP ADA
+        const [job] = await db
+          .select(jobSelect) // Semua logika GAP Analysis sudah ada di sini
+          .from(schema.jobListings)
+          .innerJoin(schema.companies, eq(schema.companies.companyId, schema.jobListings.companyId))
+          .where(eq(schema.jobListings.jobId, id));
 
-      const [job] = await db
-        .select(jobSelect)
-        .from(schema.jobListings)
-        .innerJoin(schema.companies, eq(schema.companies.companyId, schema.jobListings.companyId))
-        .where(eq(schema.jobListings.jobId, id));
-
-      if (!job) {
-        throw new HttpError(404, "Job not found");
+        if (!job) throw new HttpError(404, "Job not found");
+        return res.json(successResponse("Job fetched successfully", job));
+      } catch (error) {
+        return next(error);
       }
-
-      return res.json(successResponse("Job fetched successfully", job));
-    } catch (error) {
-      return next(error);
     }
-  }
-);
+  );
 
 /**
  * @swagger
@@ -374,6 +391,7 @@ jobRouter.put(
         ensurePublishableJobPayload(mergedJob);
       }
 
+      // 🎯 FIX GAP ANALYSIS: Menambahkan dukungan untuk field benefits, level, dan skills
       const [job] = await db
         .update(schema.jobListings)
         .set({

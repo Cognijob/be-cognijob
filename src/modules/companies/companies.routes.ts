@@ -8,6 +8,8 @@ import { HttpError } from "../../lib/http-error.js";
 import { authenticate } from "../../middlewares/authenticate.js";
 import { authorize } from "../../middlewares/authorize.js";
 import { validate } from "../../middlewares/validate.js";
+import { upload } from "../../middlewares/upload.js";
+import { supabase } from "../../lib/supabase.js";
 import { companyQuerySchema, updateCompanyProfileSchema } from "./companies.schemas.js";
 
 export const companyRouter = Router();
@@ -219,6 +221,46 @@ companyRouter.get(
   }
 );
 
+// ─── GET /company/members (recruiter) ────────────────────────────────────────
+/**
+ * @swagger
+ * /company/members:
+ *   get:
+ *     tags: [Companies]
+ *     summary: Get list of recruiters in the current company (max 3)
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Company members fetched successfully
+ */
+companyRouter.get(
+  "/company/members",
+  authenticate,
+  authorize("recruiter"),
+  async (req, res, next) => {
+    try {
+      const membership = await ensureRecruiterCompanyMembership(req.user!.userId);
+
+      const members = await db
+        .select({
+          userId: schema.users.userId,
+          name: schema.users.name,
+          email: schema.users.email,
+          joinedAt: schema.companyRecruiters.joinedAt,
+        })
+        .from(schema.companyRecruiters)
+        .leftJoin(schema.users, eq(schema.companyRecruiters.userId, schema.users.userId))
+        .where(eq(schema.companyRecruiters.companyId, membership.companyId))
+        .limit(3);
+
+      return res.json(successResponse("Company members fetched successfully", members));
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
 /**
  * @swagger
  * /company/profile:
@@ -255,6 +297,92 @@ companyRouter.get(
       }
 
       return res.json(successResponse("Company profile fetched successfully", company));
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+// ─── POST /company/logo (recruiter) ──────────────────────────────────────────
+/**
+ * @swagger
+ * /company/logo:
+ *   post:
+ *     tags: [Companies]
+ *     summary: Upload company logo
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Logo updated successfully
+ */
+companyRouter.post(
+  "/company/logo",
+  authenticate,
+  authorize("recruiter"),
+  upload.single("logo"),
+  async (req, res, next) => {
+    try {
+      const userId = req.user!.userId;
+      const file = req.file;
+
+      if (!file) throw new HttpError(400, "Logo file is required");
+
+      // Validasi format (hanya gambar)
+      const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+      if (!ALLOWED_TYPES.includes(file.mimetype)) {
+        throw new HttpError(400, "Only JPEG, PNG, or WEBP images are accepted");
+      }
+
+      // Validasi ukuran (misal maks 2 MB agar loading website cepat)
+      const MAX_SIZE = 2 * 1024 * 1024;
+      if (file.size > MAX_SIZE) {
+        throw new HttpError(400, "Logo size must not exceed 2 MB");
+      }
+
+      const membership = await ensureRecruiterCompanyMembership(userId);
+
+      // Ambil data logo lama untuk dibersihkan nanti
+      const [companyRecord] = await db
+        .select({ logoUrl: schema.companies.logoUrl })
+        .from(schema.companies)
+        .where(eq(schema.companies.companyId, membership.companyId));
+
+      const filePath = `logos/${membership.companyId}/${Date.now()}-${file.originalname}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from("company-logo")
+        .upload(filePath, file.buffer, {
+          contentType: file.mimetype,
+          upsert: true,
+        });
+
+      if (uploadError) throw new HttpError(500, uploadError.message);
+
+      // Hapus logo lama dari storage jika sebelumnya sudah ada logo
+      if (companyRecord?.logoUrl) {
+        try {
+          const oldPath = companyRecord.logoUrl.split("/public/company-logo/")[1];
+          if (oldPath) {
+            await supabase.storage.from("company-logo").remove([oldPath]);
+          }
+        } catch (err) {
+          console.warn("[Cleanup] Gagal menghapus logo lama:", err);
+        }
+      }
+
+      const { data: urlData } = supabase.storage
+        .from("company-logo")
+        .getPublicUrl(filePath);
+
+      await db
+        .update(schema.companies)
+        .set({ logoUrl: urlData.publicUrl, updatedAt: new Date() })
+        .where(eq(schema.companies.companyId, membership.companyId));
+
+      return res.json(successResponse("Company logo updated successfully", {
+        logoUrl: urlData.publicUrl,
+      }));
     } catch (error) {
       return next(error);
     }

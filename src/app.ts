@@ -26,7 +26,7 @@ import { publicJobRouter } from "./modules/jobs/public-jobs.routes.js";
 // ⚠ applicationSummaryRouter HARUS di-mount SEBELUM applicationRouter
 //   agar path "/applications/summary" tidak salah di-parse sebagai "/:id"
 import { applicationSummaryRouter } from "./modules/applications/application-summary.routes.js";
-import { applicationRouter } from "./modules/applications/applications.routes.js";
+import { applicationRouter, jobApplicantsRouter } from "./modules/applications/applications.routes.js";
 
 // ── Bookmarks ─────────────────────────────────────────────────────────────────
 import { bookmarkRouter } from "./modules/bookmarks/bookmarks.routes.js";
@@ -74,6 +74,7 @@ app.use("/auth", authRouter);
 app.use("/users", userRouter);
 
 // Jobs — recruiter CRUD (butuh auth recruiter)
+app.use("/jobs", jobApplicantsRouter);
 app.use("/jobs", jobRouter);
 
 // Public jobs — job seeker browse (no auth required)

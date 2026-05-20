@@ -48,6 +48,11 @@ const changePasswordSchema = z.object({
   newPassword:     z.string().min(8, "New password must be at least 8 characters"),
 });
 
+const updatePreferencesSchema = z.object({
+  notificationNewApplicants: z.boolean().optional(),
+  notificationMarketing: z.boolean().optional(),
+});
+
 const profileSelect = {
   skills:                 schema.jobSeekerProfiles.skills,
   portfolioLink:          schema.jobSeekerProfiles.portfolioLink,
@@ -534,6 +539,99 @@ userRouter.post(
         .where(eq(schema.users.userId, userId));
 
       return res.json(successResponse("Password changed successfully"));
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+// ─── GET /users/preferences ───────────────────────────────────────────────────
+/**
+ * @swagger
+ * /users/preferences:
+ *   get:
+ *     tags: [Users]
+ *     summary: Get current recruiter preferences
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Preferences fetched successfully
+ */
+userRouter.get(
+  "/preferences",
+  authenticate,
+  authorize("recruiter"), // Hanya recruiter yang bisa mengakses preferensi ini
+  async (req, res, next) => {
+    try {
+      const userId = req.user!.userId;
+
+      const [prefs] = await db
+        .select({
+          notificationNewApplicants: schema.recruiterPreferences.notificationNewApplicants,
+          notificationMarketing: schema.recruiterPreferences.notificationMarketing,
+        })
+        .from(schema.recruiterPreferences)
+        .where(eq(schema.recruiterPreferences.userId, userId));
+
+      // Fallback ke default jika record belum ada
+      return res.json(
+        successResponse("Preferences fetched successfully", prefs ?? { // Default values dari schema
+          notificationNewApplicants: true,
+          notificationMarketing: false
+        })
+      );
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+// ─── PUT /users/preferences ───────────────────────────────────────────────────
+/**
+ * @swagger
+ * /users/preferences:
+ *   put:
+ *     tags: [Users]
+ *     summary: Update current recruiter preferences
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               notificationNewApplicants: { type: boolean, example: true }
+ *               notificationMarketing: { type: boolean, example: false }
+ *
+ *     responses:
+ *       200:
+ *         description: Preferences updated successfully
+ */
+userRouter.put(
+  "/preferences",
+  authenticate,
+  authorize("recruiter"), // Hanya recruiter yang bisa mengubah preferensi ini
+  validate({ body: updatePreferencesSchema }),
+  async (req, res, next) => {
+    try {
+      const userId = req.user!.userId;
+      const body = req.body as z.infer<typeof updatePreferencesSchema>;
+
+      const [prefs] = await db
+        .insert(schema.recruiterPreferences)
+        .values({ userId, ...body })
+        .onConflictDoUpdate({
+          target: schema.recruiterPreferences.userId,
+          set: { ...body, updatedAt: new Date() },
+        })
+        .returning();
+
+      return res.json(
+        successResponse("Preferences updated successfully", prefs)
+      );
     } catch (error) {
       return next(error);
     }

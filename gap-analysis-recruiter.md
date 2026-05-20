@@ -1,34 +1,82 @@
-# CAPSTONE PROJECT GROUP 8 - GAP ANALYSIS TECRUITER
 
-## DATABASE SCHEMA REFERENCE (schema.ts)
-- Users Table: users (userId: uuid, name: varchar, email: varchar, isAnonymous: boolean)
-- Applications Table: applications (applicationId: uuid, jobId: uuid, userId: uuid, status: enum, createdAt: timestamp, cvUrl: text)
-- Companies Table: companies (companyId: uuid, logoUrl: text)
-- Recruiter Preferences: Need new table (recruiter_preferences)
+# GAP ANALYSIS: RECRUITER PAGES
 
-## MISSING & PARTIAL FEATURES TO IMPLEMENT
+Dokumen ini merangkum kesenjangan antara kebutuhan fitur UI/UX dengan implementasi *backend* saat ini untuk modul Recruiter pada Capstone Project Group 8.
 
-### 1. [APPLICANT] Filter & Sort Pelamar
-- File: src/routes/applications.routes.ts
-- Requirement: Update endpoint `GET /jobs/:jobId/applications` agar mendukung query params `status` (filter berdasarkan status lamaran) serta `sort=appliedAt` dan `order=asc|desc`.
+---
 
-### 2. [APPLICANT] Detail Pelamar & Masking Anonim
-- File: src/routes/applications.routes.ts
-- Requirement: Buat endpoint baru `GET /applications/:applicationId/detail`. 
-- Logic: Ambil data lamaran, join dengan `users` dan `jobSeekerProfiles`. JIKA `applications.isAnonymous` bernilai true, maka data user (nama, email, photoUrl) harus di-masking menjadi "Anonymous Candidate", "hidden@cognijob.com", dan null pada list maupun detail.
+### [DASHBOARD]
 
-### 3. [APPLICANT] Summary Stats Pelamar per Job (Kanban Board)
-- File: src/routes/jobs.routes.ts atau src/routes/applications.routes.ts
-- Requirement: Buat endpoint `GET /jobs/:jobId/applications/summary`.
-- Logic: Lakukan `count()` dan `groupBy` berdasarkan `applications.status` untuk jobId tersebut agar UI Kanban bisa menampilkan jumlah pelamar per stage (submitted, reviewed, next_stage, accepted, rejected).
+* **Stats Overview:** (Status: ❌ Missing)
+* Kebutuhan: Belum ada endpoint untuk agregat (Lowongan Aktif, Total Pelamar, Perlu Review).
+* Tindakan: Buat `GET /jobs/summary`.
 
-### 4. [COMPANY] Upload Logo Perusahaan
-- File: src/routes/company.routes.ts
-- Requirement: Buat endpoint `POST /company/logo`.
-- Logic: Gunakan upload middleware ke Supabase Storage, dapatkan publicUrl, lalu update kolom `logoUrl` di tabel `companies` berdasarkan companyId milik recruiter yang sedang login.
 
-### 5. [SETTINGS] Recruiter Preferences
-- File: src/db/schema.ts & src/routes/users.routes.ts
-- Requirement: 
-  1. Tambahkan skema tabel `recruiterPreferences` di `schema.ts` (fields: preferenceId, userId, language, notificationEnabled).
-  2. Buat endpoint `GET /users/preferences` dan `PUT /users/preferences` di `users.routes.ts`.
+* **Postingan Job Terbaru:** (Status: ⚠️ Partial)
+* Kebutuhan: Respons list belum menyertakan jumlah pelamar.
+* Tindakan: Tambahkan `applicantCount` & `pendingReviewCount` via JOIN/subquery.
+
+
+* **Notifikasi Pelamar Baru:** (Status: ⚠️ Partial)
+* Kebutuhan: Belum ada trigger otomatis ke recruiter saat ada aplikasi masuk.
+* Tindakan: Hubungkan `createNotification` pada service `POST /applications`.
+
+
+
+### [JOB]
+
+* **Buat & Edit Lowongan:** (Status: ⚠️ Partial)
+* Kebutuhan: Schema (Zod) belum mencakup field baru (benefits, level, skills).
+* Tindakan: Update `createJobSchema` dan `updateJobSchema`.
+
+
+* **List Lowongan:** (Status: ⚠️ Partial)
+* Kebutuhan: UI memerlukan badge jumlah pelamar per job.
+* Tindakan: Enrich response `GET /jobs` dengan subquery count pelamar.
+
+
+* **Detail Lowongan (Recruiter View):** (Status: ⚠️ Partial)
+* Kebutuhan: Field tambahan belum masuk dalam `jobSelect`.
+* Tindakan: Tambahkan `benefits`, `level`, dan `skills` ke dalam query detail job.
+
+
+
+### [APPLICANT]
+
+* **Daftar Pelamar per Job:** (Status: 🔍 Cek)
+* Tindakan: Validasi ulang logic `is_anonymous` (masking) dan status pelamar.
+
+
+* **Filter & Sort Pelamar:** (Status: ❌ Missing)
+* Tindakan: Implementasi query params `status`, `sort` (appliedAt), dan `order` pada endpoint list pelamar.
+
+
+* **Detail Pelamar:** (Status: ⚠️ Partial)
+* Kebutuhan: Belum ada join detail profil + riwayat status.
+* Tindakan: Buat `GET /applications/:id/detail`.
+
+
+* **Summary Stats (Kanban):** (Status: ❌ Missing)
+* Tindakan: Buat `GET /jobs/:jobId/applications/summary` untuk breakdown status pelamar.
+
+
+
+### [COMPANY]
+
+* **Upload Logo Perusahaan:** (Status: ❌ Missing)
+* Tindakan: Tambahkan kolom `logo_url` di DB dan buat endpoint `POST /company/logo` (Supabase Storage).
+
+
+* **Daftar Recruiter (Members):** (Status: 🔍 Cek)
+* Tindakan: Buat `GET /company/members` untuk menampilkan daftar anggota perusahaan.
+
+
+
+### [NOTIFICATIONS & SETTINGS]
+
+* **Notifikasi Real-Time:** (Status: ⚠️ Partial)
+* Tindakan: Tambahkan `supabase.channel().send()` pada `notification.service.ts` agar update bersifat *real-time*.
+
+
+* **Recruiter Preferences:** (Status: ❌ Missing)
+* Tindakan: Buat tabel `recruiter_preferences` serta endpoint `GET/PUT /users/preferences`.

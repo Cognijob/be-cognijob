@@ -38,12 +38,16 @@ export const users = pgTable(
   {
     userId: uuid("user_id").defaultRandom().primaryKey(),
     name: varchar("name", { length: 150 }).notNull(),
+    firstName: varchar("first_name", { length: 75 }),
+    lastName: varchar("last_name", { length: 75 }),
     email: varchar("email", { length: 255 }).notNull().unique(),
     passwordHash: text("password_hash").notNull(),
     role: userRoleEnum("role").notNull(),
     gender: varchar("gender", { length: 50 }),
     age: integer("age"),
     photoUrl: text("photo_url"),
+    location: varchar("location", { length: 150 }),
+    whatsappNumber: varchar("whatsapp_number", { length: 20 }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },

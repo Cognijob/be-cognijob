@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import { ZodError } from "zod";
+import { z } from "zod";
 import { logger } from "../lib/logger.js";
 import { HttpError } from "../lib/http-error.js";
 import { errorResponse } from "../lib/api-response.js";
@@ -9,7 +9,7 @@ export const errorHandler = (error: unknown, _req: Request, res: Response, _next
     return res.status(error.statusCode).json(errorResponse(error.message, error.details));
   }
 
-  if (error instanceof ZodError) {
+  if (error instanceof z.ZodError) {
     return res.status(400).json(errorResponse("Validation failed", error.flatten()));
   }
 

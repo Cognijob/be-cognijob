@@ -29,9 +29,12 @@ export const userRouter = Router();
 
 const updateProfileSchema = z.object({
   // Data user (tabel users)
-  name:   z.string().trim().min(1).max(150).optional(),
-  gender: z.string().trim().max(50).nullable().optional(),
-  age:    z.number().int().min(0).nullable().optional(),
+  firstName: z.string().trim().min(1).max(75).optional(),
+  lastName:  z.string().trim().min(1).max(75).optional(),
+  gender:    z.string().trim().max(50).nullable().optional(),
+  age:       z.number().int().min(0).nullable().optional(),
+  location:  z.string().trim().max(150).nullable().optional(),
+  whatsappNumber: z.string().trim().regex(/^(\+62|62|0)[0-9]{9,15}$/, "WhatsApp number must be a valid Indonesian phone number").nullable().optional(),
 
   // Data profil job seeker (tabel job_seeker_profiles)
   // Bisa berupa string (JSON.stringify) atau object/array langsung.
@@ -118,11 +121,15 @@ userRouter.get(
         .select({
           userId:    schema.users.userId,
           name:      schema.users.name,
+          firstName: schema.users.firstName,
+          lastName:  schema.users.lastName,
           email:     schema.users.email,
           role:      schema.users.role,
           gender:    schema.users.gender,
           age:       schema.users.age,
           photoUrl:  schema.users.photoUrl,
+          location:  schema.users.location,
+          whatsappNumber: schema.users.whatsappNumber,
           createdAt: schema.users.createdAt,
           updatedAt: schema.users.updatedAt,
         })
@@ -246,9 +253,23 @@ userRouter.put(
 
       // Pisahkan field user vs field profil
       const userFields: Partial<typeof schema.users.$inferInsert> = {};
-      if (body.name   !== undefined) userFields.name   = body.name;
-      if (body.gender !== undefined) userFields.gender = body.gender;
-      if (body.age    !== undefined) userFields.age    = body.age;
+      if (body.firstName !== undefined) userFields.firstName = body.firstName;
+      if (body.lastName  !== undefined) userFields.lastName  = body.lastName;
+      if (body.gender    !== undefined) userFields.gender    = body.gender;
+      if (body.age       !== undefined) userFields.age       = body.age;
+      if (body.location  !== undefined) userFields.location  = body.location;
+      if (body.whatsappNumber !== undefined) userFields.whatsappNumber = body.whatsappNumber;
+
+      if (body.firstName !== undefined || body.lastName !== undefined) {
+        const [currUser] = await db
+          .select({ firstName: schema.users.firstName, lastName: schema.users.lastName })
+          .from(schema.users)
+          .where(eq(schema.users.userId, userId));
+
+        const fName = body.firstName !== undefined ? body.firstName : (currUser?.firstName ?? "");
+        const lName = body.lastName !== undefined ? body.lastName : (currUser?.lastName ?? "");
+        userFields.name = `${fName} ${lName}`.trim();
+      }
 
       const profileFields: Partial<typeof schema.jobSeekerProfiles.$inferInsert> = {};
       if (body.skills                 !== undefined) profileFields.skills                 = body.skills;

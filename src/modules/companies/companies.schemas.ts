@@ -18,4 +18,4 @@ export const updateCompanyProfileSchema = z
     employeeCount: z.string().trim().max(50).nullable().optional(),
     // Contoh: "500 - 1.000", "< 50", "1.000+"
   })
-  .refine((v) => Object.keys(v).length > 0, "At least one field must be provided");
+  .refine((v: any) => Object.keys(v).length > 0, "At least one field must be provided");

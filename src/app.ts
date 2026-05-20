@@ -21,6 +21,7 @@ import { jobRouter } from "./modules/jobs/jobs.routes.js";
 //   agar path "/public/jobs/recommended" tidak salah di-parse sebagai "/:id"
 import { recommendedJobRouter } from "./modules/jobs/recommended-jobs.routes.js";
 import { publicJobRouter } from "./modules/jobs/public-jobs.routes.js";
+import { publicStatsRouter } from "./modules/stats/public-stats.routes.js";
 
 // ── Applications
 // ⚠ applicationSummaryRouter HARUS di-mount SEBELUM applicationRouter
@@ -81,6 +82,7 @@ app.use("/jobs", jobRouter);
 // "recommended" sebelum "/:id"
 app.use("/public/jobs/recommended", recommendedJobRouter);
 app.use("/public/jobs", publicJobRouter);
+app.use("/public/stats", publicStatsRouter);
 
 // Applications
 // "summary" sebelum "/:id"

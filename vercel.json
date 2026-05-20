@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build:vercel",
+  "builds": [
+    {
+      "src": "dist/index.cjs",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/dist/index.cjs"
+    }
+  ]
+}

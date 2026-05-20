@@ -1,0 +1,1 @@
+export { notificationRouter } from "../modules/notifications/notifications.routes.js";

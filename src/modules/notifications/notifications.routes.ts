@@ -16,7 +16,7 @@ const notificationQuerySchema = z.object({
   isRead: z
     .string()
     .optional()
-    .transform((v) => (v === "true" ? true : v === "false" ? false : undefined)),
+    .transform((v: any) => (v === "true" ? true : v === "false" ? false : undefined)),
   type: z
     .enum(["application_status", "new_message", "job_recommendation", "deadline_reminder"])
     .optional()

@@ -35,7 +35,7 @@ export const recruiterRegistrationSchema = z
       })
       .optional()
   })
-  .superRefine((value, ctx) => {
+  .superRefine((value: any, ctx: any) => {
     if (value.companyMode === "existing" && !value.existingCompanyId) {
       ctx.addIssue({
         code: "custom",

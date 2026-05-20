@@ -1,8 +1,10 @@
 import type { NextFunction, Request, Response } from "express";
 import type { ParamsDictionary } from "express-serve-static-core";
-import type { ZodTypeAny } from "zod";
+import { z } from "zod";
 import type { ParsedQs } from "qs";
 import { HttpError } from "../lib/http-error.js";
+
+type ZodTypeAny = z.ZodTypeAny;
 
 interface ValidationSchemas {
   body?: ZodTypeAny;

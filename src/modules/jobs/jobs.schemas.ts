@@ -29,9 +29,9 @@ export const createJobSchema = jobMutationFieldsSchema
     status: jobStatusSchema.default("draft")
   })
   .refine(
-    (value) => Object.keys(value).some((key) => key !== "status"),
+    (value: any) => Object.keys(value).some((key) => key !== "status"),
     "At least one field must be provided"
   );
 
 export const updateJobSchema = jobMutationFieldsSchema
-  .refine((value) => Object.keys(value).length > 0, "At least one field must be provided");
+  .refine((value: any) => Object.keys(value).length > 0, "At least one field must be provided");

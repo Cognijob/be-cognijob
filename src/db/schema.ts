@@ -28,7 +28,8 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "application_status",
   "new_message",
   "job_recommendation",
-  "deadline_reminder"
+  "deadline_reminder",
+  "new_applicant"
 ]);
 
 // ─── USERS ────────────────────────────────────────────────────────────────────
@@ -71,6 +72,7 @@ export const companies = pgTable("companies", {
   contactEmail: varchar("contact_email", { length: 255 }),
   foundedAt: date("founded_at"),
   employeeCount: varchar("employee_count", { length: 50 }),
+  logoUrl: text("logo_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 });
@@ -339,6 +341,21 @@ export const jobListings = pgTable(
     companyIdx: index("idx_job_listings_company_id").on(table.companyId),
     statusIdx: index("idx_job_listings_status").on(table.status)
   })
+);
+
+// ─── RECRUITER PREFERENCES ────────────────────────────────────────────────────
+export const recruiterPreferences = pgTable(
+  "recruiter_preferences",
+  {
+    preferenceId: uuid("preference_id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .unique()
+      .references(() => users.userId, { onDelete: "cascade" }),
+    notificationNewApplicants: boolean("notification_new_applicants").notNull().default(true),
+    notificationMarketing: boolean("notification_marketing").notNull().default(false),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  }
 );
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────

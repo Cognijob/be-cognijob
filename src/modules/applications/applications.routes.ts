@@ -44,7 +44,9 @@ const applicantListQuerySchema = z.object({
   status: z
     .enum(["submitted", "reviewed", "next_stage", "accepted", "rejected"])
     .optional(),
-  search: z.string().optional()
+  search: z.string().optional(),
+  sort: z.enum(["appliedAt", "applied_at"]).default("appliedAt"),
+  order: z.enum(["asc", "desc"]).default("desc")
 });
 
 const updateStatusSchema = z.object({
@@ -52,7 +54,15 @@ const updateStatusSchema = z.object({
 });
 
 const applicationParamsSchema = z.object({ id: z.uuid() });
+const applicationDetailParamsSchema = z.object({ applicationId: z.uuid() });
 const jobApplicantsParamsSchema = z.object({ jobId: z.uuid() });
+const allRecruiterApplicationStatuses: RecruiterApplicationStatus[] = [
+  "submitted",
+  "reviewed",
+  "next_stage",
+  "accepted",
+  "rejected"
+];
 
 // ─── POST /applications ───────────────────────────────────────────────────────
 /**
@@ -91,6 +101,7 @@ const jobApplicantsParamsSchema = z.object({ jobId: z.uuid() });
  *       409:
  *         description: Already applied to this job
  */
+
 applicationRouter.post(
   "/",
   authenticate,
@@ -101,7 +112,7 @@ applicationRouter.post(
       const userId = req.user!.userId;
       const { jobId, isAnonymous, cvUrl } = req.body as z.infer<typeof applyJobSchema>;
 
-      // Cek job ada dan published
+      // 1. Cek job ada dan published
       const [job] = await db
         .select()
         .from(schema.jobListings)
@@ -115,7 +126,7 @@ applicationRouter.post(
         throw new HttpError(400, "This job posting has expired");
       }
 
-      // Prevent duplicate
+      // 2. Prevent duplicate
       const [existing] = await db
         .select({ applicationId: schema.jobApplications.applicationId })
         .from(schema.jobApplications)
@@ -128,12 +139,13 @@ applicationRouter.post(
 
       if (existing) throw new HttpError(409, "You have already applied to this job");
 
+      // 3. Insert Application
       const [application] = await db
         .insert(schema.jobApplications)
         .values({ jobId, userId, isAnonymous, cvUrl, recruiterStatus: "submitted" })
         .returning();
 
-      // Notifikasi ke job seeker
+      // 4. Notifikasi ke job seeker
       await createNotification({
         userId,
         type: "application_status",
@@ -142,8 +154,26 @@ applicationRouter.post(
         referenceId: application.applicationId
       });
 
+      // 5. Notifikasi ke Recruiter
+      const [recruiterMembership] = await db
+        .select({ userId: schema.companyRecruiters.userId })
+        .from(schema.companyRecruiters)
+        .where(eq(schema.companyRecruiters.companyId, job.companyId));
+
+      if (recruiterMembership) {
+        await createNotification({
+          userId: recruiterMembership.userId,
+          type: "new_applicant", 
+          title: "New Applicant Received",
+          body: `You have a new applicant for your job "${job.title}".`,
+          referenceId: application.applicationId
+        });
+      }
+
+      // 6. Return response
       return res.status(201).json(successResponse("Application submitted successfully", application));
     } catch (error) {
+      console.error("DEBUG ERROR:", error);
       return next(error);
     }
   }
@@ -337,6 +367,227 @@ applicationRouter.get(
   }
 );
 
+// ─── GET /jobs/:jobId/applications/summary ────────────────────────────────────
+/**
+ * @swagger
+ * /jobs/{jobId}/applications/summary:
+ *   get:
+ *     tags: [Applications]
+ *     summary: Get applicant summary count per status for a job
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: jobId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Applicant summary fetched successfully
+ *       403:
+ *         description: Access denied
+ */
+jobApplicantsRouter.get(
+  "/:jobId/applications/summary",
+  authenticate,
+  authorize("recruiter"),
+  validate({ params: jobApplicantsParamsSchema }),
+  async (req, res, next) => {
+    try {
+      const { jobId } = req.params as { jobId: string };
+
+      await ensureRecruiterCanAccessJob(req.user!.userId, jobId);
+
+      const rows = await db
+        .select({
+          status: schema.jobApplications.recruiterStatus,
+          count: count()
+        })
+        .from(schema.jobApplications)
+        .where(eq(schema.jobApplications.jobId, jobId))
+        .groupBy(schema.jobApplications.recruiterStatus);
+
+      const countMap = Object.fromEntries(rows.map((row) => [row.status, Number(row.count)]));
+      const byStatus = Object.fromEntries(
+        allRecruiterApplicationStatuses.map((status) => [status, countMap[status] ?? 0])
+      );
+      const total = rows.reduce((sum, row) => sum + Number(row.count), 0);
+
+      return res.json(
+        successResponse("Applicant summary fetched successfully", {
+          total,
+          byStatus
+        })
+      );
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+// ─── GET /jobs/:jobId/applications ────────────────────────────────────────────
+/**
+ * @swagger
+ * /jobs/{jobId}/applications:
+ *   get:
+ *     tags: [Applications]
+ *     summary: List applications for a job (recruiter)
+ *     description: Supports status filtering and appliedAt sorting. Identity is masked when isAnonymous=true.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: jobId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [submitted, reviewed, next_stage, accepted, rejected] }
+ *       - in: query
+ *         name: sort
+ *         schema: { type: string, enum: [appliedAt], default: appliedAt }
+ *       - in: query
+ *         name: order
+ *         schema: { type: string, enum: [asc, desc], default: desc }
+ *     responses:
+ *       200:
+ *         description: Applications fetched successfully
+ *       403:
+ *         description: Access denied
+ */
+jobApplicantsRouter.get(
+  "/:jobId/applications",
+  authenticate,
+  authorize("recruiter"),
+  validate({ params: jobApplicantsParamsSchema, query: applicantListQuerySchema }),
+  async (req, res, next) => {
+    try {
+      const { jobId } = req.params as { jobId: string };
+      const { page, limit, status, search, order } =
+        req.query as unknown as z.infer<typeof applicantListQuerySchema>;
+      const offset = (page - 1) * limit;
+
+      await ensureRecruiterCanAccessJob(req.user!.userId, jobId);
+
+      const filters = [
+        eq(schema.jobApplications.jobId, jobId),
+        status ? eq(schema.jobApplications.recruiterStatus, status) : undefined,
+        search ? ilike(schema.jobSeekerProfiles.skills, `%${search}%`) : undefined
+      ].filter((f): f is NonNullable<typeof f> => Boolean(f));
+
+      const whereClause = and(...filters);
+      const orderDir =
+        order === "asc"
+          ? asc(schema.jobApplications.appliedAt)
+          : desc(schema.jobApplications.appliedAt);
+
+      const [rows, [{ total }]] = await Promise.all([
+        db
+          .select({
+            applicationId: schema.jobApplications.applicationId,
+            jobId: schema.jobApplications.jobId,
+            isAnonymous: schema.jobApplications.isAnonymous,
+            recruiterStatus: schema.jobApplications.recruiterStatus,
+            cvUrl: schema.jobApplications.cvUrl,
+            appliedAt: schema.jobApplications.appliedAt,
+            updatedAt: schema.jobApplications.updatedAt,
+            skills: schema.jobSeekerProfiles.skills,
+            workExperience: schema.jobSeekerProfiles.workExperience,
+            portfolioLink: schema.jobSeekerProfiles.portfolioLink,
+            awards: schema.jobSeekerProfiles.awards,
+            organizationExperience: schema.jobSeekerProfiles.organizationExperience,
+            interests: schema.jobSeekerProfiles.interests,
+            profileCompleteness: schema.jobSeekerProfiles.profileCompleteness,
+            userId: schema.jobApplications.userId,
+            userName: schema.users.name,
+            userEmail: schema.users.email,
+            userPhotoUrl: schema.users.photoUrl,
+            userGender: schema.users.gender,
+            userAge: schema.users.age
+          })
+          .from(schema.jobApplications)
+          .leftJoin(
+            schema.jobSeekerProfiles,
+            eq(schema.jobApplications.userId, schema.jobSeekerProfiles.userId)
+          )
+          .leftJoin(schema.users, eq(schema.jobApplications.userId, schema.users.userId))
+          .where(whereClause)
+          .orderBy(orderDir)
+          .limit(limit)
+          .offset(offset),
+
+        db
+          .select({ total: count() })
+          .from(schema.jobApplications)
+          .leftJoin(
+            schema.jobSeekerProfiles,
+            eq(schema.jobApplications.userId, schema.jobSeekerProfiles.userId)
+          )
+          .where(whereClause)
+      ]);
+
+      const applications = rows.map((row) => {
+        const base = {
+          applicationId: row.applicationId,
+          jobId: row.jobId,
+          isAnonymous: row.isAnonymous,
+          recruiterStatus: row.recruiterStatus,
+          cvUrl: row.cvUrl,
+          appliedAt: row.appliedAt,
+          updatedAt: row.updatedAt,
+          skills: row.skills,
+          workExperience: row.workExperience,
+          portfolioLink: row.portfolioLink,
+          awards: row.awards,
+          organizationExperience: row.organizationExperience,
+          interests: row.interests,
+          profileCompleteness: row.profileCompleteness
+        };
+
+        if (row.isAnonymous) {
+          return {
+            ...base,
+            userId: null,
+            name: "Anonymous Candidate",
+            email: "hidden@cognijob.com",
+            photoUrl: null,
+            gender: null,
+            age: null
+          };
+        }
+
+        return {
+          ...base,
+          userId: row.userId,
+          name: row.userName,
+          email: row.userEmail,
+          photoUrl: row.userPhotoUrl,
+          gender: row.userGender,
+          age: row.userAge
+        };
+      });
+
+      const totalPages = Math.ceil(Number(total) / limit);
+
+      return res.json(
+        successResponse("Applications fetched successfully", {
+          applications,
+          pagination: {
+            page,
+            limit,
+            total: Number(total),
+            totalPages,
+            hasNext: page < totalPages,
+            hasPrev: page > 1
+          }
+        })
+      );
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
 // ─── GET /jobs/:jobId/applicants ──────────────────────────────────────────────
 /**
  * @swagger
@@ -379,7 +630,7 @@ jobApplicantsRouter.get(
   async (req, res, next) => {
     try {
       const { jobId } = req.params as { jobId: string };
-      const { page, limit, status, search } =
+      const { page, limit, status, search, order } =
         req.query as unknown as z.infer<typeof applicantListQuerySchema>;
       const offset = (page - 1) * limit;
 
@@ -393,6 +644,10 @@ jobApplicantsRouter.get(
       ].filter((f): f is NonNullable<typeof f> => Boolean(f));
 
       const whereClause = and(...filters);
+      const orderDir =
+        order === "asc"
+          ? asc(schema.jobApplications.appliedAt)
+          : desc(schema.jobApplications.appliedAt);
 
       const [rows, [{ total }]] = await Promise.all([
         db
@@ -429,7 +684,7 @@ jobApplicantsRouter.get(
             eq(schema.jobApplications.userId, schema.users.userId)
           )
           .where(whereClause)
-          .orderBy(desc(schema.jobApplications.appliedAt))
+          .orderBy(orderDir)
           .limit(limit)
           .offset(offset),
 
@@ -473,7 +728,15 @@ jobApplicantsRouter.get(
           };
         }
 
-        return { ...base, userId: null, name: null, email: null, photoUrl: null };
+        return {
+          ...base,
+          userId: null,
+          name: "Anonymous Candidate",
+          email: "hidden@cognijob.com",
+          photoUrl: null,
+          gender: null,
+          age: null
+        };
       });
 
       const totalPages = Math.ceil(Number(total) / limit);
@@ -491,6 +754,133 @@ jobApplicantsRouter.get(
           }
         })
       );
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+// ─── GET /applications/:applicationId/detail ──────────────────────────────────
+/**
+ * @swagger
+ * /applications/{applicationId}/detail:
+ *   get:
+ *     tags: [Applications]
+ *     summary: Get applicant detail with anonymous masking (recruiter)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: applicationId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Application detail fetched successfully
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Application not found
+ */
+applicationRouter.get(
+  "/:applicationId/detail",
+  authenticate,
+  authorize("recruiter"),
+  validate({ params: applicationDetailParamsSchema }),
+  async (req, res, next) => {
+    try {
+      const { applicationId } = req.params as { applicationId: string };
+
+      const [row] = await db
+        .select({
+          applicationId: schema.jobApplications.applicationId,
+          jobId: schema.jobApplications.jobId,
+          isAnonymous: schema.jobApplications.isAnonymous,
+          recruiterStatus: schema.jobApplications.recruiterStatus,
+          cvUrl: schema.jobApplications.cvUrl,
+          appliedAt: schema.jobApplications.appliedAt,
+          updatedAt: schema.jobApplications.updatedAt,
+          skills: schema.jobSeekerProfiles.skills,
+          workExperience: schema.jobSeekerProfiles.workExperience,
+          portfolioLink: schema.jobSeekerProfiles.portfolioLink,
+          awards: schema.jobSeekerProfiles.awards,
+          organizationExperience: schema.jobSeekerProfiles.organizationExperience,
+          interests: schema.jobSeekerProfiles.interests,
+          profileCompleteness: schema.jobSeekerProfiles.profileCompleteness,
+          profileCvUrl: schema.jobSeekerProfiles.cvUrl,
+          cvFileName: schema.jobSeekerProfiles.cvFileName,
+          cvFileSize: schema.jobSeekerProfiles.cvFileSize,
+          cvMimeType: schema.jobSeekerProfiles.cvMimeType,
+          cvUploadedAt: schema.jobSeekerProfiles.cvUploadedAt,
+          userId: schema.jobApplications.userId,
+          userName: schema.users.name,
+          userEmail: schema.users.email,
+          userPhotoUrl: schema.users.photoUrl,
+          userGender: schema.users.gender,
+          userAge: schema.users.age,
+          jobTitle: schema.jobListings.title,
+          companyId: schema.jobListings.companyId
+        })
+        .from(schema.jobApplications)
+        .leftJoin(
+          schema.jobSeekerProfiles,
+          eq(schema.jobApplications.userId, schema.jobSeekerProfiles.userId)
+        )
+        .leftJoin(schema.users, eq(schema.jobApplications.userId, schema.users.userId))
+        .innerJoin(
+          schema.jobListings,
+          eq(schema.jobApplications.jobId, schema.jobListings.jobId)
+        )
+        .where(eq(schema.jobApplications.applicationId, applicationId));
+
+      if (!row) throw new HttpError(404, "Application not found");
+
+      await ensureRecruiterCanAccessJob(req.user!.userId, row.jobId);
+
+      const base = {
+        applicationId: row.applicationId,
+        jobId: row.jobId,
+        jobTitle: row.jobTitle,
+        isAnonymous: row.isAnonymous,
+        recruiterStatus: row.recruiterStatus,
+        cvUrl: row.cvUrl,
+        appliedAt: row.appliedAt,
+        updatedAt: row.updatedAt,
+        skills: row.skills,
+        workExperience: row.workExperience,
+        portfolioLink: row.portfolioLink,
+        awards: row.awards,
+        organizationExperience: row.organizationExperience,
+        interests: row.interests,
+        profileCompleteness: row.profileCompleteness,
+        profileCvUrl: row.profileCvUrl,
+        cvFileName: row.cvFileName,
+        cvFileSize: row.cvFileSize,
+        cvMimeType: row.cvMimeType,
+        cvUploadedAt: row.cvUploadedAt
+      };
+
+      const detail = row.isAnonymous
+        ? {
+            ...base,
+            userId: null,
+            name: "Anonymous Candidate",
+            email: "hidden@cognijob.com",
+            photoUrl: null,
+            gender: null,
+            age: null
+          }
+        : {
+            ...base,
+            userId: row.userId,
+            name: row.userName,
+            email: row.userEmail,
+            photoUrl: row.userPhotoUrl,
+            gender: row.userGender,
+            age: row.userAge
+          };
+
+      return res.json(successResponse("Application detail fetched successfully", detail));
     } catch (error) {
       return next(error);
     }
@@ -590,7 +980,15 @@ applicationRouter.get(
       };
 
       const detail = row.isAnonymous
-        ? { ...base, userId: null, name: null, email: null, photoUrl: null }
+        ? {
+            ...base,
+            userId: null,
+            name: "Anonymous Candidate",
+            email: "hidden@cognijob.com",
+            photoUrl: null,
+            gender: null,
+            age: null
+          }
         : {
             ...base,
             userId: row.userId,

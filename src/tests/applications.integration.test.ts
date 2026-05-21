@@ -3,6 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpError } from "../lib/http-error.js";
 import { signAccessToken } from "../lib/jwt.js";
+import { jobApplicantsRouter } from "../routes/applications.routes.js";
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -367,3 +368,4 @@ describe("Applications API", () => {
     expect(response.status).toBe(403);
   });
 });
+

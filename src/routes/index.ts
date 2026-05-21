@@ -3,20 +3,23 @@ import { Router } from "express";
 import { authRouter } from "./auth.routes.js";
 import { bookmarkRouter } from "./bookmarks.routes.js";
 import { companyRouter } from "./companies.routes.js";
-import { jobRouter } from "./jobs.routes.js";
 import { applicationRouter, jobApplicantsRouter } from "./applications.routes.js";
+import { jobSummaryRouter } from "./jobs-summary.routes.js";
+import { jobRouter } from "./jobs.routes.js";
 import { userRouter } from "./users.routes.js";
 import { publicJobRouter } from "./public-jobs.routes.js";
 import { ratingRouter } from "./rating.routes.js";
 import { notificationRouter } from "./notifications.routes.js";
 import { messageRouter } from "./messages.routes.js";
 
+
 export const apiRouter = Router();
 
 apiRouter.use("/auth", authRouter);
 apiRouter.use("/", companyRouter);
-apiRouter.use("/jobs", jobRouter);
 apiRouter.use("/jobs", jobApplicantsRouter);
+apiRouter.use("/jobs", jobSummaryRouter);
+apiRouter.use("/jobs", jobRouter);
 apiRouter.use("/applications", applicationRouter);
 apiRouter.use("/users", userRouter);
 apiRouter.use("/bookmarks", bookmarkRouter);
@@ -24,3 +27,4 @@ apiRouter.use("/public/jobs", publicJobRouter);
 apiRouter.use("/", ratingRouter);
 apiRouter.use("/notifications", notificationRouter);
 apiRouter.use("/", messageRouter);
+
